@@ -8,6 +8,10 @@
         public string DuongDan { get; set; }
         public int ThuTu { get; set; }
 
+        public Guid? ParentId { get; set; }
+        public Menu Parent { get; set; }
+        public ICollection<Menu> Children { get; set; }
     }
+
 
 }

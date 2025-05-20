@@ -13,6 +13,7 @@ namespace AiImageGeneratorApi.Interfaces
         IGenericRepository<ChatMessage> ChatMessages{ get; }
         IGenericRepository<ChatGroup> ChatGroups { get; }
         IGenericRepository<ChatGroupMember> ChatGroupMembers { get; }
+        IGenericRepository<ChatMessageRead> ChatMessageReads { get; }
         Task<int> CompleteAsync();
     }
 }

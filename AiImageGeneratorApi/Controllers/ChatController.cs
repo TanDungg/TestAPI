@@ -1,12 +1,16 @@
-﻿using AiImageGeneratorApi.Hubs;
+﻿using AiImageGeneratorApi.Data;
+using AiImageGeneratorApi.Hubs;
 using AiImageGeneratorApi.Interfaces;
 using AiImageGeneratorApi.Models.DTOs;
 using AiImageGeneratorApi.Models.Entities;
+using Dapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using System.Data;
 using System.Security.Claims;
 
 namespace AiImageGeneratorApi.Controllers
@@ -16,6 +20,7 @@ namespace AiImageGeneratorApi.Controllers
     [Route("api/[controller]")]
     public class ChatController : ControllerBase
     {
+        private readonly ApplicationDbContext _dbContext;
         private readonly IUnitOfWork _unitOfWork;
         private readonly Guid _currentUserId;
         private readonly IHubContext<ChatHub> _hubContext;
@@ -47,18 +52,63 @@ namespace AiImageGeneratorApi.Controllers
             return Ok();
         }
 
+        //[HttpGet("messages/{userId}")]
+        //public async Task<IActionResult> GetPrivateMessagesBySP(Guid userId)
+        //{
+        //    var currentUserId = _currentUserId;
+
+        //    string sql = "EXEC sp_GetPrivateMessages {0}, {1}";
+        //    var result = await _unitOfWork.ChatMessages.ExecuteStoredProcedureAsync<ChatUserInfoDto>(sql, currentUserId, userId);
+
+        //    if (result == null || result.Count == 0)
+        //        return NotFound();
+
+        //    var raw = result.First();
+        //    var parsedMessages = JsonConvert.DeserializeObject<List<ChatMessageDto>>(raw.List_Messages);
+
+        //    return Ok(new
+        //    {
+        //        raw.NguoiNhanId,
+        //        raw.HoVaTen,
+        //        raw.DiaChi,
+        //        raw.Email,
+        //        raw.Sdt,
+        //        raw.HinhAnh,
+        //        List_Messages = parsedMessages
+        //    });
+        //}
+
         [HttpGet("messages/{userId}")]
         public async Task<IActionResult> GetPrivateMessagesBySP(Guid userId)
         {
             var currentUserId = _currentUserId;
+            var connection = _dbContext.Database.GetDbConnection();
 
-            string sql = "EXEC sp_GetPrivateMessages {0}, {1}";
-            var result = await _unitOfWork.ChatMessages.ExecuteStoredProcedureAsync<ChatMessageDto>(sql, currentUserId, userId);
+            await connection.OpenAsync();
 
-            return Ok(result);
+            var result = await connection.QueryFirstOrDefaultAsync<string>(
+                sql: "sp_GetPrivateMessages",
+                param: new { UserId1 = currentUserId, UserId2 = userId },
+                commandType: CommandType.StoredProcedure
+            );
+
+            if (string.IsNullOrWhiteSpace(result))
+                return NotFound();
+
+            var userInfo = JsonConvert.DeserializeObject<ChatUserInfoDto>(result);
+            var messages = JsonConvert.DeserializeObject<List<ChatMessageDto>>(userInfo.List_Messages);
+
+            return Ok(new
+            {
+                userInfo.NguoiNhanId,
+                userInfo.HoVaTen,
+                userInfo.DiaChi,
+                userInfo.Email,
+                userInfo.Sdt,
+                userInfo.HinhAnh,
+                List_Messages = messages
+            });
         }
-
-
 
 
         [HttpGet("group/messages/{groupId}")]
@@ -70,6 +120,74 @@ namespace AiImageGeneratorApi.Controllers
             var messages = await _unitOfWork.ChatMessages.FindAsync(m => m.NhomId == groupId && !m.IsDeleted);
             return Ok(messages.OrderBy(m => m.CreatedAt));
         }
+
+        [HttpGet("list-message")]
+        public async Task<IActionResult> GetRecentChats()
+        {
+            var userId = _currentUserId;
+
+            var messages = await _unitOfWork.ChatMessages
+                .FindAsync(m => (m.NguoiGuiId == userId || m.NguoiNhanId == userId) && m.NhomId == null && !m.IsDeleted);
+
+            var userMessages = messages
+                .GroupBy(m => m.NguoiGuiId == userId ? m.NguoiNhanId : m.NguoiGuiId)
+                .Select(group =>
+                {
+                    var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
+                    var unreadCount = group.Count(m => m.NguoiNhanId == userId && !m.IsRead);
+
+                    return new ChatSummaryDto
+                    {
+                        IsNhom = false,
+                        Id = group.Key ?? Guid.Empty,
+                        TinNhanMoiNhat = lastMsg.TinNhan,
+                        ThoiGianNhan = lastMsg.CreatedAt,
+                        SoLuongChuaXem = unreadCount
+                    };
+                }).ToList();
+
+            var joinedGroups = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.ThanhVienId == userId);
+            var groupIds = joinedGroups.Select(j => j.NhomId).ToList();
+
+            var groupMessages = await _unitOfWork.ChatMessages
+                .FindAsync(m => m.NhomId != null && groupIds.Contains(m.NhomId.Value) && !m.IsDeleted);
+
+            var groupData = groupMessages
+                .GroupBy(m => m.NhomId.Value)
+                .Select(group =>
+                {
+                    var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
+                    var unreadCount = group.Count(m => !m.IsRead && m.NguoiGuiId != userId);
+
+                    return new ChatSummaryDto
+                    {
+                        IsNhom = true,
+                        Id = group.Key,
+                        TinNhanMoiNhat = lastMsg.TinNhan,
+                        ThoiGianNhan = lastMsg.CreatedAt,
+                        SoLuongChuaXem = unreadCount
+                    };
+                }).ToList();
+
+            var users = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
+            var userMap = users.ToDictionary(u => u.Id, u => u.HoVaTen);
+
+            var groups = await _unitOfWork.ChatGroups.FindAsync(g => true);
+            var groupMap = groups.ToDictionary(g => g.Id, g => g.TenNhom);
+
+            var all = userMessages.Concat(groupData)
+                .Select(x => {
+                    x.Ten = x.IsNhom
+                        ? groupMap.GetValueOrDefault(x.Id)
+                        : userMap.GetValueOrDefault(x.Id);
+                    return x;
+                })
+                .OrderByDescending(x => x.ThoiGianNhan)
+                .ToList();
+
+            return Ok(all);
+        }
+
 
         [HttpPut("message/{id}")]
         public async Task<IActionResult> EditMessage(Guid id, [FromBody] EditMessageDto dto)
@@ -84,6 +202,26 @@ namespace AiImageGeneratorApi.Controllers
             await _unitOfWork.CompleteAsync();
             return Ok();
         }
+
+        [HttpPut("read/private/{userId}")]
+        public async Task<IActionResult> MarkPrivateMessagesAsRead(Guid userId)
+        {
+            var messages = await _unitOfWork.ChatMessages.FindAsync(m =>
+                m.NguoiGuiId == userId &&
+                m.NguoiNhanId == _currentUserId &&
+                !m.IsDeleted &&
+                m.IsRead != true);
+
+            foreach (var msg in messages)
+            {
+                msg.IsRead = true;
+                _unitOfWork.ChatMessages.Update(msg);
+            }
+
+            await _unitOfWork.CompleteAsync();
+            return Ok();
+        }
+
 
         [HttpDelete("message/{id}")]
         public async Task<IActionResult> DeleteMessage(Guid id)
@@ -170,6 +308,38 @@ namespace AiImageGeneratorApi.Controllers
             await _unitOfWork.CompleteAsync();
             return Ok();
         }
+
+        [HttpPut("read/group/{groupId}")]
+        public async Task<IActionResult> MarkGroupMessagesAsRead(Guid groupId)
+        {
+            var messages = await _unitOfWork.ChatMessages.FindAsync(m =>
+                m.NhomId == groupId &&
+                !m.IsDeleted);
+
+            var messageIds = messages.Select(m => m.Id).ToList();
+
+            var existingReads = await _unitOfWork.ChatMessageReads.FindAsync(r =>
+                r.ThanhVienId == _currentUserId && messageIds.Contains(r.TinNhanId));
+            var readMessageIds = existingReads.Select(r => r.TinNhanId).ToHashSet();
+
+            var unreadMessages = messages.Where(m => !readMessageIds.Contains(m.Id));
+
+            foreach (var msg in unreadMessages)
+            {
+                var read = new ChatMessageRead
+                {
+                    Id = Guid.NewGuid(),
+                    ThanhVienId = _currentUserId,
+                    TinNhanId = msg.Id,
+                    ThoiGianXem = DateTime.UtcNow
+                };
+                await _unitOfWork.ChatMessageReads.AddAsync(read);
+            }
+
+            await _unitOfWork.CompleteAsync();
+            return Ok();
+        }
+
 
         [HttpDelete("group/members/{groupId}")]
         public async Task<IActionResult> RemoveMembers(Guid groupId, [FromBody] List<Guid> userIds)

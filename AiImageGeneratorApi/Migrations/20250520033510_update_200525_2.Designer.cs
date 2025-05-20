@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AiImageGeneratorApi.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20250519092249_update_190525")]
-    partial class update_190525
+    [Migration("20250520033510_update_200525_2")]
+    partial class update_200525_2
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -28,21 +28,18 @@ namespace AiImageGeneratorApi.Migrations
             modelBuilder.Entity("AiImageGeneratorApi.Models.DTOs.ChatMessageDto", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("NguoiGuiId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("NguoiNhanId")
+                    b.Property<Guid>("NguoiNhanId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("TenNguoiGui")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("TenNguoiNhan")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ThoiGianGui")
@@ -52,8 +49,6 @@ namespace AiImageGeneratorApi.Migrations
                     b.Property<string>("TinNhan")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
 
                     b.ToTable("ChatMessageDto");
                 });
@@ -156,6 +151,9 @@ namespace AiImageGeneratorApi.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsRead")
+                        .HasColumnType("bit");
+
                     b.Property<Guid>("NguoiGuiId")
                         .HasColumnType("uniqueidentifier");
 
@@ -178,6 +176,36 @@ namespace AiImageGeneratorApi.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ChatMessages");
+                });
+
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageRead", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ThanhVienId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ThoiGianXem")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("TinNhanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ChatMessageReads");
                 });
 
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.GeneratedImage", b =>
@@ -258,6 +286,9 @@ namespace AiImageGeneratorApi.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("TenMenu")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -272,6 +303,8 @@ namespace AiImageGeneratorApi.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ParentId");
 
                     b.ToTable("Menus");
                 });
@@ -475,6 +508,25 @@ namespace AiImageGeneratorApi.Migrations
                     b.ToTable("UserRoles");
                 });
 
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageRead", b =>
+                {
+                    b.HasOne("AiImageGeneratorApi.Models.Entities.ChatMessage", "Message")
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AiImageGeneratorApi.Models.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Message");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.GeneratedImage", b =>
                 {
                     b.HasOne("AiImageGeneratorApi.Models.Entities.User", "User")
@@ -484,6 +536,15 @@ namespace AiImageGeneratorApi.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.Menu", b =>
+                {
+                    b.HasOne("AiImageGeneratorApi.Models.Entities.Menu", "Parent")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentId");
+
+                    b.Navigation("Parent");
                 });
 
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.RoleMenu", b =>
@@ -522,6 +583,11 @@ namespace AiImageGeneratorApi.Migrations
                     b.Navigation("Role");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.Menu", b =>
+                {
+                    b.Navigation("Children");
                 });
 
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.Role", b =>

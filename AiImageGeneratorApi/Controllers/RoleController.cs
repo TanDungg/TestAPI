@@ -187,14 +187,12 @@ namespace AiImageGeneratorApi.Controllers
 
             var userIdClaim = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
-            // Xoá toàn bộ role cũ trước khi gán mới
             var existingRoles = await _unitOfWork.UserRoles.FindAsync(ur => ur.UserId == userId);
             foreach (var ur in existingRoles)
             {
                 _unitOfWork.UserRoles.Remove(ur);
             }
 
-            // Gán mới
             foreach (var roleId in roleIds.Distinct())
             {
                 var userRole = new UserRole
@@ -211,7 +209,6 @@ namespace AiImageGeneratorApi.Controllers
             await _unitOfWork.CompleteAsync();
             return Ok("Cập nhật vai trò người dùng thành công.");
         }
-
 
         [HttpDelete("user/{userId}")]
         public async Task<IActionResult> RemoveRoleFromUser([FromBody] UserRoleDto dto)
@@ -233,28 +230,31 @@ namespace AiImageGeneratorApi.Controllers
             var rolePermissions = await _unitOfWork.RoleMenus.FindAsync(rm => rm.RoleId == roleId);
             var permissionMap = rolePermissions.ToDictionary(rm => rm.MenuId, rm => rm);
 
-            var result = allMenus.Select(menu =>
+            List<object> BuildMenuTree(IEnumerable<Menu> menus, Guid? parentId)
             {
-                permissionMap.TryGetValue(menu.Id, out var perm);
+                return menus.Where(m => m.ParentId == parentId)
+                    .OrderBy(m => m.ThuTu)
+                    .Select(menu => new
+                    {
+                        MenuId = menu.Id,
+                        menu.MaMenu,
+                        menu.TenMenu,
+                        menu.Icon,
+                        menu.DuongDan,
+                        menu.ThuTu,
 
-                return new
-                {
-                    MenuId = menu.Id,
-                    menu.MaMenu,
-                    menu.TenMenu,
-                    menu.Icon,
-                    menu.DuongDan,
-                    menu.ThuTu,
+                        View = permissionMap.TryGetValue(menu.Id, out var perm) ? perm.View : false,
+                        Add = perm?.Add ?? false,
+                        Edit = perm?.Edit ?? false,
+                        Delete = perm?.Delete ?? false,
+                        Confirm = perm?.Confirm ?? false,
 
-                    View = perm?.View ?? false,
-                    Add = perm?.Add ?? false,
-                    Edit = perm?.Edit ?? false,
-                    Delete = perm?.Delete ?? false,
-                    Confirm = perm?.Confirm ?? false
-                };
-            }).OrderBy(m => m.ThuTu);
+                        Children = BuildMenuTree(menus, menu.Id)
+                    }).ToList<object>();
+            }
 
-            return Ok(result);
+            var tree = BuildMenuTree(allMenus, null);
+            return Ok(tree);
         }
 
         [HttpPut("menu/{roleId}")]
@@ -305,6 +305,5 @@ namespace AiImageGeneratorApi.Controllers
             await _unitOfWork.CompleteAsync();
             return Ok("Cập nhật quyền thành công.");
         }
-
     }
 }

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -24,35 +25,61 @@ namespace AiImageGeneratorApi.Controllers
             _unitOfWork = unitOfWork;
         }
 
-        // GET: api/menu
         [HttpGet]
-        public async Task<IActionResult> Get()
+        public async Task<IActionResult> GetAllMenu()
         {
-            var data = await _unitOfWork.Menus.GetAllSelectAsync(
-                m => !m.IsDeleted,
-                m => new
-                {
-                    m.Id,
-                    m.MaMenu,
-                    m.TenMenu,
-                    m.Icon,
-                    m.DuongDan,
-                    m.ThuTu
-                });
-
-            return Ok(data.OrderBy(m => m.ThuTu));
+            var data = await _unitOfWork.Menus.FindAsync(m => !m.IsDeleted);
+            var tree = BuildMenuTree(data.OrderBy(m => m.ThuTu).ToList(), null);
+            return Ok(tree);
         }
 
-        // GET: api/menu/{id}
         [HttpGet("{id}")]
-        public async Task<IActionResult> Get(Guid id)
+        public async Task<IActionResult> GetByIdMenu(Guid id)
         {
             var menu = await _unitOfWork.Menus.GetByIdAsync(id);
             if (menu == null || menu.IsDeleted) return NotFound();
             return Ok(menu);
         }
 
-        // POST: api/menu
+        [HttpGet("theo-nguoi-dung")]
+        public async Task<IActionResult> GetMenusForCurrentUser()
+        {
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(userIdClaim, out Guid userId))
+                return BadRequest();
+
+            var userRoles = await _unitOfWork.UserRoles.FindAsync(ur => ur.UserId == userId);
+            var roleIds = userRoles.Select(ur => ur.RoleId).ToList();
+
+            if (!roleIds.Any()) return Ok(new List<object>());
+
+            var roleMenus = await _unitOfWork.RoleMenus.FindAsync(rm => roleIds.Contains(rm.RoleId) && rm.View);
+            var menuIds = roleMenus.Select(rm => rm.MenuId).Distinct().ToList();
+
+            if (!menuIds.Any()) return Ok(new List<object>());
+
+            var menus = await _unitOfWork.Menus.FindAsync(m => !m.IsDeleted && menuIds.Contains(m.Id));
+            var tree = BuildMenuTree(menus.OrderBy(m => m.ThuTu).ToList(), null);
+            return Ok(tree);
+        }
+
+        private List<object> BuildMenuTree(List<Menu> menus, Guid? parentId)
+        {
+            return menus
+                .Where(m => m.ParentId == parentId)
+                .OrderBy(m => m.ThuTu)
+                .Select(m => new
+                {
+                    m.Id,
+                    m.MaMenu,
+                    m.TenMenu,
+                    m.Icon,
+                    m.DuongDan,
+                    m.ParentId,
+                    children = BuildMenuTree(menus, m.Id)
+                }).ToList<object>();
+        }
+
         [HttpPost]
         public async Task<IActionResult> Post([FromBody] MenuDto menuDto)
         {
@@ -65,7 +92,7 @@ namespace AiImageGeneratorApi.Controllers
             Guid createdByGuid;
             if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out createdByGuid))
             {
-                return BadRequest("Invalid User GUID.");
+                return BadRequest();
             }
 
             var menu = new Menu
@@ -75,6 +102,7 @@ namespace AiImageGeneratorApi.Controllers
                 Icon = menuDto.Icon,
                 DuongDan = menuDto.DuongDan,
                 ThuTu = maxThuTu + 1,
+                ParentId = menuDto.ParentId,
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = createdByGuid
             };
@@ -85,24 +113,29 @@ namespace AiImageGeneratorApi.Controllers
             return Ok();
         }
 
-
         [HttpPut("{id}")]
-        public async Task<IActionResult> Put(Guid id, [FromBody] MenuDto menuDto)
+        public async Task<IActionResult> UpdateMenu(Guid id, [FromBody] MenuDto dto)
         {
-            var menu = await _unitOfWork.Menus.GetByIdAsync(id);
-            if (menu == null || menu.IsDeleted) return NotFound();
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-            menu.MaMenu = menuDto.MaMenu;
-            menu.TenMenu = menuDto.TenMenu;
-            menu.Icon = menuDto.Icon;
-            menu.DuongDan = menuDto.DuongDan;
+            var menu = await _unitOfWork.Menus.GetByIdAsync(id);
+            if (menu == null || menu.IsDeleted)
+                return NotFound();
+
+            menu.MaMenu = dto.MaMenu;
+            menu.TenMenu = dto.TenMenu;
+            menu.Icon = dto.Icon;
+            menu.DuongDan = dto.DuongDan;
+            menu.ParentId = dto.ParentId;
             menu.UpdatedAt = DateTime.UtcNow;
             menu.UpdatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
             _unitOfWork.Menus.Update(menu);
             await _unitOfWork.CompleteAsync();
-            return NoContent();
+            return Ok("Cập nhật thành công.");
         }
+
 
         [HttpPut("thu-tu/{id}")]
         public async Task<IActionResult> UpdateThuTu(Guid id, [FromQuery] int thuTu)
@@ -114,7 +147,7 @@ namespace AiImageGeneratorApi.Controllers
             if (existingMenu == null || existingMenu.IsDeleted)
                 return NotFound("Menu không tồn tại!");
 
-            var allMenus = (await _unitOfWork.Menus.FindAsync(m => !m.IsDeleted))
+            var allMenus = (await _unitOfWork.Menus.FindAsync(m => !m.IsDeleted && m.ParentId == existingMenu.ParentId))
                             .OrderBy(m => m.ThuTu)
                             .ToList();
 
@@ -127,7 +160,6 @@ namespace AiImageGeneratorApi.Controllers
                 return Ok();
 
             allMenus.RemoveAll(m => m.Id == existingMenu.Id);
-
             allMenus.Insert(thuTu - 1, existingMenu);
 
             for (int i = 0; i < allMenus.Count; i++)
@@ -147,8 +179,6 @@ namespace AiImageGeneratorApi.Controllers
             await _unitOfWork.CompleteAsync();
             return Ok("Cập nhật thứ tự thành công.");
         }
-
-
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)

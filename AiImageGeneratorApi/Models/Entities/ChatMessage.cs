@@ -6,6 +6,7 @@
         public string TinNhan { get; set; }
         public Guid? NhomId { get; set; }
         public Guid? NguoiNhanId { get; set; }
+        public bool IsRead { get; set; } = false;
     }
 
     public class ChatGroup : BaseEntity
@@ -19,5 +20,17 @@
         public Guid NhomId { get; set; }
         public Guid ThanhVienId { get; set; }
     }
+
+    public class ChatMessageRead
+    {
+        public Guid Id { get; set; }
+        public Guid TinNhanId { get; set; }
+        public Guid ThanhVienId { get; set; }
+        public DateTime ThoiGianXem { get; set; }
+
+        public ChatMessage Message { get; set; }
+        public User User { get; set; }
+    }
+
 
 }
