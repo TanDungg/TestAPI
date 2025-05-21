@@ -28,6 +28,7 @@ namespace AiImageGeneratorApi.Data
             modelBuilder.Entity<GeneratedImage>().HasQueryFilter(g => !g.IsDeleted);
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<ChatMessageDto>().HasNoKey();
+            modelBuilder.Entity<ChatUserInfoDto>().HasNoKey();
         }
     }
 

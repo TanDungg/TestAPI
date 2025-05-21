@@ -23,6 +23,7 @@ namespace AiImageGeneratorApi.Controllers
         private readonly ApplicationDbContext _dbContext;
         private readonly IUnitOfWork _unitOfWork;
         private readonly Guid _currentUserId;
+        private readonly Lazy<Task<User>> _currentUserInfo;
         private readonly IHubContext<ChatHub> _hubContext;
 
         public ChatController(IUnitOfWork unitOfWork, IHttpContextAccessor httpContextAccessor, IHubContext<ChatHub> hubContext)
@@ -30,6 +31,7 @@ namespace AiImageGeneratorApi.Controllers
             _unitOfWork = unitOfWork;
             _hubContext = hubContext;
             _currentUserId = Guid.Parse(httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.NameIdentifier));
+            _currentUserInfo = new Lazy<Task<User>>(() => _unitOfWork.Users.GetByIdAsync(_currentUserId));
         }
 
         [HttpPost("message")]
@@ -52,61 +54,35 @@ namespace AiImageGeneratorApi.Controllers
             return Ok();
         }
 
-        //[HttpGet("messages/{userId}")]
-        //public async Task<IActionResult> GetPrivateMessagesBySP(Guid userId)
-        //{
-        //    var currentUserId = _currentUserId;
-
-        //    string sql = "EXEC sp_GetPrivateMessages {0}, {1}";
-        //    var result = await _unitOfWork.ChatMessages.ExecuteStoredProcedureAsync<ChatUserInfoDto>(sql, currentUserId, userId);
-
-        //    if (result == null || result.Count == 0)
-        //        return NotFound();
-
-        //    var raw = result.First();
-        //    var parsedMessages = JsonConvert.DeserializeObject<List<ChatMessageDto>>(raw.List_Messages);
-
-        //    return Ok(new
-        //    {
-        //        raw.NguoiNhanId,
-        //        raw.HoVaTen,
-        //        raw.DiaChi,
-        //        raw.Email,
-        //        raw.Sdt,
-        //        raw.HinhAnh,
-        //        List_Messages = parsedMessages
-        //    });
-        //}
-
         [HttpGet("messages/{userId}")]
         public async Task<IActionResult> GetPrivateMessagesBySP(Guid userId)
         {
             var currentUserId = _currentUserId;
-            var connection = _dbContext.Database.GetDbConnection();
 
-            await connection.OpenAsync();
+            string sql = "EXEC sp_GetPrivateMessages {0}, {1}";
+            var result = await _unitOfWork.ChatMessages
+                .ExecuteStoredProcedureAsync<ChatUserInfoDto>(sql, currentUserId, userId);
 
-            var result = await connection.QueryFirstOrDefaultAsync<string>(
-                sql: "sp_GetPrivateMessages",
-                param: new { UserId1 = currentUserId, UserId2 = userId },
-                commandType: CommandType.StoredProcedure
-            );
-
-            if (string.IsNullOrWhiteSpace(result))
+            if (result == null || result.Count == 0)
                 return NotFound();
 
-            var userInfo = JsonConvert.DeserializeObject<ChatUserInfoDto>(result);
-            var messages = JsonConvert.DeserializeObject<List<ChatMessageDto>>(userInfo.List_Messages);
+            var raw = result.First();
+
+            var parsedMessages = new List<ChatMessageDto>();
+            if (!string.IsNullOrWhiteSpace(raw.list_Messages))
+            {
+                parsedMessages = JsonConvert.DeserializeObject<List<ChatMessageDto>>(raw.list_Messages);
+            }
 
             return Ok(new
             {
-                userInfo.NguoiNhanId,
-                userInfo.HoVaTen,
-                userInfo.DiaChi,
-                userInfo.Email,
-                userInfo.Sdt,
-                userInfo.HinhAnh,
-                List_Messages = messages
+                raw.NguoiNhanId,
+                raw.HoVaTen,
+                raw.DiaChi,
+                raw.Email,
+                raw.Sdt,
+                raw.HinhAnh,
+                List_Messages = parsedMessages
             });
         }
 
@@ -141,8 +117,10 @@ namespace AiImageGeneratorApi.Controllers
                         IsNhom = false,
                         Id = group.Key ?? Guid.Empty,
                         TinNhanMoiNhat = lastMsg.TinNhan,
-                        ThoiGianNhan = lastMsg.CreatedAt,
-                        SoLuongChuaXem = unreadCount
+                        ThoiGianNhan = lastMsg.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
+                        SoLuongChuaXem = unreadCount,
+                        IsGui = lastMsg.NguoiGuiId == userId,
+                        IsThongBao = lastMsg.IsThongBao
                     };
                 }).ToList();
 
@@ -164,8 +142,10 @@ namespace AiImageGeneratorApi.Controllers
                         IsNhom = true,
                         Id = group.Key,
                         TinNhanMoiNhat = lastMsg.TinNhan,
-                        ThoiGianNhan = lastMsg.CreatedAt,
-                        SoLuongChuaXem = unreadCount
+                        ThoiGianNhan = lastMsg.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
+                        SoLuongChuaXem = unreadCount,
+                        IsGui = lastMsg.NguoiGuiId == userId,
+                        IsThongBao = lastMsg.IsThongBao
                     };
                 }).ToList();
 
@@ -176,10 +156,9 @@ namespace AiImageGeneratorApi.Controllers
             var groupMap = groups.ToDictionary(g => g.Id, g => g.TenNhom);
 
             var all = userMessages.Concat(groupData)
-                .Select(x => {
-                    x.Ten = x.IsNhom
-                        ? groupMap.GetValueOrDefault(x.Id)
-                        : userMap.GetValueOrDefault(x.Id);
+                .Select(x =>
+                {
+                    x.Ten = x.IsNhom ? groupMap.GetValueOrDefault(x.Id) : userMap.GetValueOrDefault(x.Id);
                     return x;
                 })
                 .OrderByDescending(x => x.ThoiGianNhan)
@@ -265,7 +244,9 @@ namespace AiImageGeneratorApi.Controllers
             {
                 Id = Guid.NewGuid(),
                 TenNhom = dto.TenNhom,
-                TruongNhomId = _currentUserId
+                TruongNhomId = _currentUserId,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = _currentUserId,
             };
             await _unitOfWork.ChatGroups.AddAsync(group);
 
@@ -275,8 +256,20 @@ namespace AiImageGeneratorApi.Controllers
             foreach (var m in members)
                 await _unitOfWork.ChatGroupMembers.AddAsync(m);
 
+            var currentUser = await _currentUserInfo.Value;
+            var systemMessage = new ChatMessage
+            {
+                Id = Guid.NewGuid(),
+                NguoiGuiId = _currentUserId,
+                NhomId = group.Id,
+                TinNhan = $"{currentUser?.HoVaTen ?? "Một thành viên"} đã tạo nhóm.",
+                IsThongBao = true,
+                LoaiThongBao = "CreateGroup",
+                CreatedAt = DateTime.UtcNow
+            };
+            await _unitOfWork.ChatMessages.AddAsync(systemMessage);
             await _unitOfWork.CompleteAsync();
-            return Ok(group);
+            return Ok();
         }
 
         [HttpPut("group/{groupId}")]
@@ -288,7 +281,7 @@ namespace AiImageGeneratorApi.Controllers
             group.TenNhom = dto.TenNhom;
             _unitOfWork.ChatGroups.Update(group);
             await _unitOfWork.CompleteAsync();
-            return Ok(group);
+            return Ok();
         }
 
         [HttpPost("group/members/{groupId}")]
@@ -304,6 +297,20 @@ namespace AiImageGeneratorApi.Controllers
             {
                 await _unitOfWork.ChatGroupMembers.AddAsync(new ChatGroupMember { Id = Guid.NewGuid(), NhomId = groupId, ThanhVienId = id });
             }
+
+            var allUsers = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
+            var addedNames = allUsers.Where(u => userIds.Contains(u.Id)).Select(u => u.HoVaTen).ToList();
+            var notifyMsg = new ChatMessage
+            {
+                Id = Guid.NewGuid(),
+                NguoiGuiId = _currentUserId,
+                NhomId = groupId,
+                TinNhan = $"{string.Join(", ", addedNames)} đã được thêm vào nhóm.",
+                IsThongBao = true,
+                LoaiThongBao = "AddMembers",
+                CreatedAt = DateTime.UtcNow
+            };
+            await _unitOfWork.ChatMessages.AddAsync(notifyMsg);
 
             await _unitOfWork.CompleteAsync();
             return Ok();
@@ -352,7 +359,42 @@ namespace AiImageGeneratorApi.Controllers
             {
                 _unitOfWork.ChatGroupMembers.Remove(m);
             }
+
+            var allUsers = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
+            var removedNames = allUsers.Where(u => userIds.Contains(u.Id)).Select(u => u.HoVaTen).ToList();
+            var notifyMsg = new ChatMessage
+            {
+                Id = Guid.NewGuid(),
+                NguoiGuiId = _currentUserId,
+                NhomId = groupId,
+                TinNhan = $"{string.Join(", ", removedNames)} đã bị xoá khỏi nhóm.",
+                IsThongBao = true,
+                LoaiThongBao = "RemovedMembers",
+                CreatedAt = DateTime.UtcNow
+            };
+            await _unitOfWork.ChatMessages.AddAsync(notifyMsg);
+
             await _unitOfWork.CompleteAsync();
+            return Ok();
+        }
+
+        [HttpDelete("group/{groupId}")]
+        public async Task<IActionResult> DeleteGroup(Guid groupId)
+        {
+            var group = await _unitOfWork.ChatGroups.GetByIdAsync(groupId);
+            if (group == null)
+                return NotFound();
+
+            if (group.TruongNhomId != _currentUserId)
+                return Forbid();
+
+            group.IsDeleted = true;
+            group.DeletedAt = DateTime.UtcNow;
+            group.DeletedBy = _currentUserId;
+
+            _unitOfWork.ChatGroups.Update(group);
+            await _unitOfWork.CompleteAsync();
+
             return Ok();
         }
     }

@@ -7,6 +7,8 @@
         public Guid? NhomId { get; set; }
         public Guid? NguoiNhanId { get; set; }
         public bool IsRead { get; set; } = false;
+        public bool IsThongBao { get; set; } = false;
+        public string? LoaiThongBao { get; set; }
     }
 
     public class ChatGroup : BaseEntity

@@ -1,4 +1,7 @@
-﻿namespace AiImageGeneratorApi.Models.DTOs
+﻿using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace AiImageGeneratorApi.Models.DTOs
 {
     public class ChatMessageDto
     {
@@ -10,6 +13,8 @@
         public string? TenNguoiNhan { get; set; }
         public string ThoiGianGui { get; set; }
         public bool IsRead { get; set; }
+        public bool IsThongBao { get; set; }
+        public string? LoaiThongBao { get; set; } 
     }
 
     public class ChatUserInfoDto
@@ -20,7 +25,7 @@
         public string Email { get; set; }
         public string Sdt { get; set; }
         public string HinhAnh { get; set; }
-        public string List_Messages { get; set; } 
+        public string list_Messages { get; set; } 
     }
 
     public class SendMessageDto
@@ -53,8 +58,10 @@
         public bool IsNhom { get; set; }
         public string Ten { get; set; }
         public string TinNhanMoiNhat { get; set; }
-        public DateTime ThoiGianNhan { get; set; }
+        public string ThoiGianNhan { get; set; }
         public int SoLuongChuaXem { get; set; }
+        public bool IsGui { get; set; }
+        public bool IsThongBao { get; set; }
     }
 
 }
