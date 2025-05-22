@@ -42,7 +42,7 @@ namespace AiImageGeneratorApi.Controllers
                 Id = Guid.NewGuid(),
                 MaQuyen = roleDto.MaQuyen,
                 TenQuyen = roleDto.TenQuyen,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.Now,
                 CreatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier))
             };
 
@@ -59,7 +59,7 @@ namespace AiImageGeneratorApi.Controllers
 
             role.MaQuyen = updatedDto.MaQuyen;
             role.TenQuyen = updatedDto.TenQuyen;
-            role.UpdatedAt = DateTime.UtcNow;
+            role.UpdatedAt = DateTime.Now;
             role.UpdatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
             _unitOfWork.Roles.Update(role);
@@ -74,7 +74,7 @@ namespace AiImageGeneratorApi.Controllers
             if (role == null || role.IsDeleted) return NotFound();
 
             role.IsDeleted = true;
-            role.DeletedAt = DateTime.UtcNow;
+            role.DeletedAt = DateTime.Now;
             role.DeletedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
             _unitOfWork.Roles.Update(role);
@@ -200,7 +200,7 @@ namespace AiImageGeneratorApi.Controllers
                     Id = Guid.NewGuid(),
                     RoleId = roleId,
                     UserId = userId,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.Now,
                     CreatedBy = userIdClaim
                 };
                 await _unitOfWork.UserRoles.AddAsync(userRole);
@@ -277,7 +277,7 @@ namespace AiImageGeneratorApi.Controllers
                     existing.Edit = item.Edit;
                     existing.Delete = item.Delete;
                     existing.Confirm = item.Confirm;
-                    existing.UpdatedAt = DateTime.UtcNow;
+                    existing.UpdatedAt = DateTime.Now;
                     existing.UpdatedBy = userId;
 
                     _unitOfWork.RoleMenus.Update(existing);
@@ -294,7 +294,7 @@ namespace AiImageGeneratorApi.Controllers
                         Edit = item.Edit,
                         Delete = item.Delete,
                         Confirm = item.Confirm,
-                        CreatedAt = DateTime.UtcNow,
+                        CreatedAt = DateTime.Now,
                         CreatedBy = userId
                     };
 

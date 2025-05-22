@@ -3,31 +3,6 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace AiImageGeneratorApi.Models.DTOs
 {
-    public class ChatMessageDto
-    {
-        public Guid Id { get; set; }
-        public Guid NguoiGuiId { get; set; }
-        public string? TenNguoiGui { get; set; }
-        public string TinNhan { get; set; }
-        public Guid NguoiNhanId { get; set; }
-        public string? TenNguoiNhan { get; set; }
-        public string ThoiGianGui { get; set; }
-        public bool IsRead { get; set; }
-        public bool IsThongBao { get; set; }
-        public string? LoaiThongBao { get; set; } 
-    }
-
-    public class ChatUserInfoDto
-    {
-        public Guid NguoiNhanId { get; set; }
-        public string HoVaTen { get; set; }
-        public string DiaChi { get; set; }
-        public string Email { get; set; }
-        public string Sdt { get; set; }
-        public string HinhAnh { get; set; }
-        public string list_Messages { get; set; } 
-    }
-
     public class SendMessageDto
     {
         public Guid Id { get; set; }
@@ -41,6 +16,19 @@ namespace AiImageGeneratorApi.Models.DTOs
         public string TinNhan { get; set; }
     }
 
+
+
+    public class ChatUserInfoDto
+    {
+        public Guid NguoiNhanId { get; set; }
+        public string HoVaTen { get; set; }
+        public string DiaChi { get; set; }
+        public string Email { get; set; }
+        public string Sdt { get; set; }
+        public string HinhAnh { get; set; }
+        public string List_Ngays { get; set; }
+    }
+
     public class CreateGroupDto
     {
         public string TenNhom { get; set; }
@@ -50,6 +38,21 @@ namespace AiImageGeneratorApi.Models.DTOs
     public class UpdateGroupDto
     {
         public string TenNhom { get; set; }
+    }
+
+    [Keyless]
+    public class ChatGroupInfoDto
+    {
+        public Guid NhomId { get; set; }
+        public string TenNhom { get; set; }
+
+        public string List_Ngays { get; set; }
+    }
+
+    public class ChatMessageGroupedByDateDto
+    {
+        public string Ngay { get; set; }
+        public List<ChatMessageDto> List_Messages { get; set; }
     }
 
     public class ChatSummaryDto
@@ -64,4 +67,18 @@ namespace AiImageGeneratorApi.Models.DTOs
         public bool IsThongBao { get; set; }
     }
 
+    public class ChatMessageDto
+    {
+        public Guid Id { get; set; }
+        public Guid NguoiGuiId { get; set; }
+        public string? TenNguoiGui { get; set; }
+        public string TinNhan { get; set; }
+        public Guid? NguoiNhanId { get; set; }
+        public string? TenNguoiNhan { get; set; }
+        public string ThoiGianGui { get; set; }
+        public bool IsSend { get; set; }
+        public bool IsRead { get; set; }
+        public bool IsThongBao { get; set; }
+        public string? LoaiThongBao { get; set; }
+    }
 }

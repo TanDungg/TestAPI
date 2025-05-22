@@ -29,6 +29,7 @@ namespace AiImageGeneratorApi.Data
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<ChatMessageDto>().HasNoKey();
             modelBuilder.Entity<ChatUserInfoDto>().HasNoKey();
+            modelBuilder.Entity<ChatGroupInfoDto>().HasNoKey();
         }
     }
 

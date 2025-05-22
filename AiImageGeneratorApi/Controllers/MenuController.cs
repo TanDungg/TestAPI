@@ -103,7 +103,7 @@ namespace AiImageGeneratorApi.Controllers
                 DuongDan = menuDto.DuongDan,
                 ThuTu = maxThuTu + 1,
                 ParentId = menuDto.ParentId,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.Now,
                 CreatedBy = createdByGuid
             };
 
@@ -128,7 +128,7 @@ namespace AiImageGeneratorApi.Controllers
             menu.Icon = dto.Icon;
             menu.DuongDan = dto.DuongDan;
             menu.ParentId = dto.ParentId;
-            menu.UpdatedAt = DateTime.UtcNow;
+            menu.UpdatedAt = DateTime.Now;
             menu.UpdatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
             _unitOfWork.Menus.Update(menu);
@@ -170,7 +170,7 @@ namespace AiImageGeneratorApi.Controllers
                 if (m.ThuTu != newThuTu)
                 {
                     m.ThuTu = newThuTu;
-                    m.UpdatedAt = DateTime.UtcNow;
+                    m.UpdatedAt = DateTime.Now;
                     m.UpdatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
                     _unitOfWork.Menus.Update(m);
                 }
@@ -187,7 +187,7 @@ namespace AiImageGeneratorApi.Controllers
             if (menu == null || menu.IsDeleted) return NotFound();
 
             menu.IsDeleted = true;
-            menu.DeletedAt = DateTime.UtcNow;
+            menu.DeletedAt = DateTime.Now;
             menu.DeletedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
             _unitOfWork.Menus.Update(menu);
             await _unitOfWork.CompleteAsync();

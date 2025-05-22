@@ -4,11 +4,11 @@
     {
         public Guid NguoiGuiId { get; set; }
         public string TinNhan { get; set; }
-        public Guid? NhomId { get; set; }
-        public Guid? NguoiNhanId { get; set; }
+        public Guid? NhomId { get; set; } = null;
+        public Guid? NguoiNhanId { get; set; } = null;
         public bool IsRead { get; set; } = false;
         public bool IsThongBao { get; set; } = false;
-        public string? LoaiThongBao { get; set; }
+        public string? LoaiThongBao { get; set; } = null;
     }
 
     public class ChatGroup : BaseEntity

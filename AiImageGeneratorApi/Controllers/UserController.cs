@@ -58,7 +58,7 @@ namespace AiImageGeneratorApi.Controllers
             user.Email = userDto.Email;
             user.Sdt = userDto.Sdt;
             user.HinhAnh = userDto.HoVaTen;
-            user.UpdatedAt = DateTime.UtcNow;
+            user.UpdatedAt = DateTime.Now;
             user.UpdatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
             _unitOfWork.Users.Update(user);
@@ -74,7 +74,7 @@ namespace AiImageGeneratorApi.Controllers
             if (user == null) return NotFound();
 
             user.IsDeleted = true;
-            user.DeletedAt = DateTime.UtcNow;
+            user.DeletedAt = DateTime.Now;
             user.DeletedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
             _unitOfWork.Users.Update(user);
