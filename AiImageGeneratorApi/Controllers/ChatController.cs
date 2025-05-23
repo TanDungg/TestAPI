@@ -37,7 +37,8 @@ namespace AiImageGeneratorApi.Controllers
         [HttpPost("messages")]
         public async Task<IActionResult> SendMessage([FromBody] SendMessageDto dto)
         {
-            if (string.IsNullOrWhiteSpace(dto.TinNhan)) return BadRequest("Nội dung không được để trống");
+            if (string.IsNullOrWhiteSpace(dto.TinNhan) && (dto.List_Files == null || !dto.List_Files.Any()))
+                return BadRequest("Phải có nội dung hoặc file đính kèm");
 
             var message = new ChatMessage
             {
@@ -49,10 +50,28 @@ namespace AiImageGeneratorApi.Controllers
                 NhomId = dto.NhomId
             };
 
+            // Gắn danh sách file nếu có
+            if (dto.List_Files != null)
+            {
+                foreach (var f in dto.List_Files)
+                {
+                    message.Files.Add(new ChatMessageFile
+                    {
+                        Id = Guid.NewGuid(),
+                        FileUrl = f.FileUrl,
+                        ChatMessageId = message.Id,
+                        CreatedAt = DateTime.Now,
+                        CreatedBy = _currentUserId
+                    });
+                }
+            }
+
             await _unitOfWork.ChatMessages.AddAsync(message);
             await _unitOfWork.CompleteAsync();
+            await _hubContext.Clients.User(dto.NguoiNhanId.ToString()).SendAsync("ReceiveMessage", new { message.Id, message.TinNhan, message.CreatedAt });
             return Ok();
         }
+
 
         [HttpGet("messages/{userId}")]
         public async Task<IActionResult> GetPrivateMessagesBySP(Guid userId)
@@ -195,19 +214,19 @@ namespace AiImageGeneratorApi.Controllers
         }
 
 
-        [HttpPut("message/{id}")]
-        public async Task<IActionResult> EditMessage(Guid id, [FromBody] EditMessageDto dto)
-        {
-            var msg = await _unitOfWork.ChatMessages.GetByIdAsync(id);
-            if (msg == null || msg.NguoiGuiId != _currentUserId) return Forbid();
+        //[HttpPut("message/{id}")]
+        //public async Task<IActionResult> EditMessage(Guid id, [FromBody] EditMessageDto dto)
+        //{
+        //    var msg = await _unitOfWork.ChatMessages.GetByIdAsync(id);
+        //    if (msg == null || msg.NguoiGuiId != _currentUserId) return Forbid();
 
-            msg.TinNhan = dto.TinNhan;
-            msg.UpdatedAt = DateTime.Now;
+        //    msg.TinNhan = dto.TinNhan;
+        //    msg.UpdatedAt = DateTime.Now;
 
-            _unitOfWork.ChatMessages.Update(msg);
-            await _unitOfWork.CompleteAsync();
-            return Ok();
-        }
+        //    _unitOfWork.ChatMessages.Update(msg);
+        //    await _unitOfWork.CompleteAsync();
+        //    return Ok();
+        //}
 
         [HttpPut("read/private/{userId}")]
         public async Task<IActionResult> MarkPrivateMessagesAsRead(Guid userId)

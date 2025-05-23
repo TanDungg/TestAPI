@@ -3,20 +3,17 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace AiImageGeneratorApi.Models.DTOs
 {
+    public class ChatFileDto
+    {
+        public string FileUrl { get; set; }
+    }
     public class SendMessageDto
     {
-        public Guid Id { get; set; }
         public Guid? NguoiNhanId { get; set; }
         public Guid? NhomId { get; set; }
         public string TinNhan { get; set; }
+        public List<ChatFileDto>? List_Files { get; set; }
     }
-
-    public class EditMessageDto
-    {
-        public string TinNhan { get; set; }
-    }
-
-
 
     public class ChatUserInfoDto
     {
@@ -80,5 +77,6 @@ namespace AiImageGeneratorApi.Models.DTOs
         public bool IsRead { get; set; }
         public bool IsThongBao { get; set; }
         public string? LoaiThongBao { get; set; }
+        public List<ChatFileDto> List_Files { get; set; }
     }
 }

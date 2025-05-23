@@ -1,5 +1,13 @@
 ﻿namespace AiImageGeneratorApi.Models.Entities
 {
+    public class ChatMessageFile : BaseEntity
+    {
+        public Guid ChatMessageId { get; set; }
+        public string FileUrl { get; set; }
+
+        public ChatMessage ChatMessage { get; set; }
+    }
+
     public class ChatMessage : BaseEntity
     {
         public Guid NguoiGuiId { get; set; }
@@ -9,6 +17,7 @@
         public bool IsRead { get; set; } = false;
         public bool IsThongBao { get; set; } = false;
         public string? LoaiThongBao { get; set; } = null;
+        public ICollection<ChatMessageFile> Files { get; set; } = new List<ChatMessageFile>();
     }
 
     public class ChatGroup : BaseEntity

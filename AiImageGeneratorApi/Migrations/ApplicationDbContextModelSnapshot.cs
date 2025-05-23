@@ -22,12 +22,31 @@ namespace AiImageGeneratorApi.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("AiImageGeneratorApi.Models.DTOs.ChatGroupInfoDto", b =>
+                {
+                    b.Property<string>("List_Ngays")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("NhomId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TenNhom")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.ToTable("ChatGroupInfoDto");
+                });
+
             modelBuilder.Entity("AiImageGeneratorApi.Models.DTOs.ChatMessageDto", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsRead")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSend")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsThongBao")
@@ -39,7 +58,7 @@ namespace AiImageGeneratorApi.Migrations
                     b.Property<Guid>("NguoiGuiId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("NguoiNhanId")
+                    b.Property<Guid?>("NguoiNhanId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("TenNguoiGui")
@@ -77,14 +96,14 @@ namespace AiImageGeneratorApi.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("List_Ngays")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("NguoiNhanId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Sdt")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("list_Messages")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -220,6 +239,47 @@ namespace AiImageGeneratorApi.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ChatMessages");
+                });
+
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ChatMessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChatMessageId");
+
+                    b.ToTable("ChatMessageFile");
                 });
 
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageRead", b =>
@@ -552,6 +612,17 @@ namespace AiImageGeneratorApi.Migrations
                     b.ToTable("UserRoles");
                 });
 
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageFile", b =>
+                {
+                    b.HasOne("AiImageGeneratorApi.Models.Entities.ChatMessage", "ChatMessage")
+                        .WithMany("Files")
+                        .HasForeignKey("ChatMessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ChatMessage");
+                });
+
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageRead", b =>
                 {
                     b.HasOne("AiImageGeneratorApi.Models.Entities.ChatMessage", "Message")
@@ -627,6 +698,11 @@ namespace AiImageGeneratorApi.Migrations
                     b.Navigation("Role");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessage", b =>
+                {
+                    b.Navigation("Files");
                 });
 
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.Menu", b =>
