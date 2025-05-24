@@ -50,7 +50,6 @@ namespace AiImageGeneratorApi.Controllers
                 NhomId = dto.NhomId
             };
 
-            // Gắn danh sách file nếu có
             if (dto.List_Files != null)
             {
                 foreach (var f in dto.List_Files)
@@ -68,10 +67,41 @@ namespace AiImageGeneratorApi.Controllers
 
             await _unitOfWork.ChatMessages.AddAsync(message);
             await _unitOfWork.CompleteAsync();
-            await _hubContext.Clients.User(dto.NguoiNhanId.ToString()).SendAsync("ReceiveMessage", new { message.Id, message.TinNhan, message.CreatedAt });
+
+            var currentUser = await _currentUserInfo.Value;
+            var messageDto = new
+            {
+                message.Id,
+                message.TinNhan,
+                message.NguoiGuiId,
+                message.NguoiNhanId,
+                message.NhomId,
+                message.CreatedAt,
+                NguoiGui = new
+                {
+                    currentUser.Id,
+                    currentUser.HoVaTen,
+                    currentUser.HinhAnh
+                },
+                Files = message.Files.Select(f => new {
+                    f.Id,
+                    f.FileUrl
+                }).ToList()
+            };
+
+            if (message.NhomId != null)
+            {
+                await _hubContext.Clients.Group(message.NhomId.ToString())
+                    .SendAsync("ReceiveNotification", messageDto);
+            }
+            else
+            {
+                await _hubContext.Clients.User(message.NguoiNhanId.ToString())
+                    .SendAsync("ReceiveNotification", messageDto);
+            }
+
             return Ok();
         }
-
 
         [HttpGet("messages/{userId}")]
         public async Task<IActionResult> GetPrivateMessagesBySP(Guid userId)
@@ -228,26 +258,6 @@ namespace AiImageGeneratorApi.Controllers
         //    return Ok();
         //}
 
-        [HttpPut("read/private/{userId}")]
-        public async Task<IActionResult> MarkPrivateMessagesAsRead(Guid userId)
-        {
-            var messages = await _unitOfWork.ChatMessages.FindAsync(m =>
-                m.NguoiGuiId == userId &&
-                m.NguoiNhanId == _currentUserId &&
-                !m.IsDeleted &&
-                m.IsRead != true);
-
-            foreach (var msg in messages)
-            {
-                msg.IsRead = true;
-                _unitOfWork.ChatMessages.Update(msg);
-            }
-
-            await _unitOfWork.CompleteAsync();
-            return Ok();
-        }
-
-
         [HttpDelete("message/{id}")]
         public async Task<IActionResult> DeleteMessage(Guid id)
         {
@@ -362,38 +372,6 @@ namespace AiImageGeneratorApi.Controllers
             return Ok();
         }
 
-        [HttpPut("read/group/{groupId}")]
-        public async Task<IActionResult> MarkGroupMessagesAsRead(Guid groupId)
-        {
-            var messages = await _unitOfWork.ChatMessages.FindAsync(m =>
-                m.NhomId == groupId &&
-                !m.IsDeleted);
-
-            var messageIds = messages.Select(m => m.Id).ToList();
-
-            var existingReads = await _unitOfWork.ChatMessageReads.FindAsync(r =>
-                r.ThanhVienId == _currentUserId && messageIds.Contains(r.TinNhanId));
-            var readMessageIds = existingReads.Select(r => r.TinNhanId).ToHashSet();
-
-            var unreadMessages = messages.Where(m => !readMessageIds.Contains(m.Id));
-
-            foreach (var msg in unreadMessages)
-            {
-                var read = new ChatMessageRead
-                {
-                    Id = Guid.NewGuid(),
-                    ThanhVienId = _currentUserId,
-                    TinNhanId = msg.Id,
-                    ThoiGianXem = DateTime.Now
-                };
-                await _unitOfWork.ChatMessageReads.AddAsync(read);
-            }
-
-            await _unitOfWork.CompleteAsync();
-            return Ok();
-        }
-
-
         [HttpDelete("group/members/{groupId}")]
         public async Task<IActionResult> RemoveMembers(Guid groupId, [FromBody] List<Guid> userIds)
         {
@@ -441,6 +419,59 @@ namespace AiImageGeneratorApi.Controllers
             _unitOfWork.ChatGroups.Update(group);
             await _unitOfWork.CompleteAsync();
 
+            return Ok();
+        }
+
+        [HttpPut("read/{id}")]
+        public async Task<IActionResult> MarkMessagesAsRead(Guid id, [FromQuery] bool isNhom)
+        {
+            if (id == Guid.Empty)
+                return BadRequest("Thiếu thông tin id");
+
+            if (isNhom)
+            {
+                // Đánh dấu đã đọc tin nhắn nhóm
+                var messages = await _unitOfWork.ChatMessages.FindAsync(m =>
+                    m.NhomId == id &&
+                    !m.IsDeleted);
+
+                var messageIds = messages.Select(m => m.Id).ToList();
+
+                var existingReads = await _unitOfWork.ChatMessageReads.FindAsync(r =>
+                    r.ThanhVienId == _currentUserId && messageIds.Contains(r.TinNhanId));
+                var readMessageIds = existingReads.Select(r => r.TinNhanId).ToHashSet();
+
+                var unreadMessages = messages.Where(m => !readMessageIds.Contains(m.Id));
+
+                foreach (var msg in unreadMessages)
+                {
+                    var read = new ChatMessageRead
+                    {
+                        Id = Guid.NewGuid(),
+                        ThanhVienId = _currentUserId,
+                        TinNhanId = msg.Id,
+                        ThoiGianXem = DateTime.Now
+                    };
+                    await _unitOfWork.ChatMessageReads.AddAsync(read);
+                }
+            }
+            else
+            {
+                // Đánh dấu đã đọc tin nhắn 1-1
+                var messages = await _unitOfWork.ChatMessages.FindAsync(m =>
+                    m.NguoiGuiId == id &&
+                    m.NguoiNhanId == _currentUserId &&
+                    !m.IsDeleted &&
+                    m.IsRead != true);
+
+                foreach (var msg in messages)
+                {
+                    msg.IsRead = true;
+                    _unitOfWork.ChatMessages.Update(msg);
+                }
+            }
+
+            await _unitOfWork.CompleteAsync();
             return Ok();
         }
     }

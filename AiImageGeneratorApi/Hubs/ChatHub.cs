@@ -1,27 +1,17 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using System.Threading.Tasks;
 
 namespace AiImageGeneratorApi.Hubs
 {
     public class ChatHub : Hub
     {
-        public async Task SendMessageToUser(string receiverId, object message)
+        public async Task JoinGroup(string groupId)
         {
-            await Clients.User(receiverId).SendAsync("ReceiveMessage", message);
+            await Groups.AddToGroupAsync(Context.ConnectionId, groupId);
         }
-
-        public async Task SendMessageToGroup(string groupId, object message)
+        public async Task LeaveGroup(string groupId)
         {
-            await Clients.Group(groupId).SendAsync("ReceiveGroupMessage", message);
-        }
-
-        public override async Task OnConnectedAsync()
-        {
-            var userId = Context.UserIdentifier;
-            if (!string.IsNullOrEmpty(userId))
-            {
-                await Groups.AddToGroupAsync(Context.ConnectionId, userId); 
-            }
-            await base.OnConnectedAsync();
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupId);
         }
     }
 }
