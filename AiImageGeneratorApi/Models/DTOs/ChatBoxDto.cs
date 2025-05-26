@@ -29,12 +29,14 @@ namespace AiImageGeneratorApi.Models.DTOs
     public class CreateGroupDto
     {
         public string TenNhom { get; set; }
+        public string HinhAnh { get; set; }
         public List<Guid> ThanhViens { get; set; }
     }
 
     public class UpdateGroupDto
     {
         public string TenNhom { get; set; }
+        public string HinhAnh { get; set; }
     }
 
     [Keyless]
@@ -42,6 +44,7 @@ namespace AiImageGeneratorApi.Models.DTOs
     {
         public Guid NhomId { get; set; }
         public string TenNhom { get; set; }
+        public string HinhAnh { get; set; }
 
         public string List_Ngays { get; set; }
     }
@@ -57,6 +60,7 @@ namespace AiImageGeneratorApi.Models.DTOs
         public Guid Id { get; set; }
         public bool IsNhom { get; set; }
         public string Ten { get; set; }
+        public string HinhAnh { get; set; }
         public string TinNhanMoiNhat { get; set; }
         public string ThoiGianNhan { get; set; }
         public int SoLuongChuaXem { get; set; }

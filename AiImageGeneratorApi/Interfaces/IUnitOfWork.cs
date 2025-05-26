@@ -1,10 +1,14 @@
 ﻿using AiImageGeneratorApi.Models.Entities;
 using AiImageGeneratorApi.Repositories;
+using System.Data;
 
 namespace AiImageGeneratorApi.Interfaces
 {
     public interface IUnitOfWork : IDisposable
     {
+        IDbConnection Connection { get; }
+        IDbTransaction Transaction { get; }
+
         IGenericRepository<User> Users { get; }
         IGenericRepository<Menu> Menus { get; }
         IGenericRepository<Role> Roles { get; }

@@ -24,58 +24,81 @@ namespace AiImageGeneratorApi.Controllers
         }
 
         [HttpPost("register")]
-        public IActionResult Register(UserRegisterDto auth)
+        public IActionResult Register([FromBody] UserRegisterDto auth)
         {
-            if (_context.Users.Any(u => u.TenDangNhap == auth.TenDangNhap && !u.IsDeleted))
-                return BadRequest("Người dùng đã tồn tại!");
-
-            var user = new User
+            if (!ModelState.IsValid)
             {
-                TenDangNhap = auth.TenDangNhap,
-                MatKhau = MD5Hash(auth.MatKhau),
-                HoVaTen = auth.HoVaTen,
-                DiaChi = auth.DiaChi,
-                Email = auth.Email,
-                Sdt = auth.Sdt,
-                HinhAnh = auth.HinhAnh,
-                CreatedAt = DateTime.Now,
-                CreatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier))
-            };
+                var errors = ModelState.Where(x => x.Value.Errors.Count > 0)
+                                       .ToDictionary(
+                                           kvp => kvp.Key,
+                                           kvp => kvp.Value.Errors.Select(e => e.ErrorMessage).ToArray()
+                                       );
 
-            _context.Users.Add(user);
-            _context.SaveChanges();
+                return BadRequest(errors);
+            }
 
-            return Ok();
+            if (_context.Users.Any(u => u.TenDangNhap == auth.TenDangNhap && !u.IsDeleted))
+            {
+                return Conflict("Người dùng đã tồn tại!");
+            }
+
+            try
+            {
+                var user = new User
+                {
+                    TenDangNhap = auth.TenDangNhap,
+                    MatKhau = MD5Hash(auth.MatKhau),
+                    HoVaTen = auth.HoVaTen,
+                    DiaChi = auth.DiaChi,
+                    Email = auth.Email,
+                    Sdt = auth.Sdt,
+                    HinhAnh = auth.HinhAnh,
+                    CreatedAt = DateTime.Now,
+                    CreatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier))
+                };
+
+                _context.Users.Add(user);
+                _context.SaveChanges();
+
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
         }
 
         [HttpPost("login")]
-        public IActionResult Login(AuthRequest auth)
+        public IActionResult Login([FromBody] AuthRequest auth)
         {
-            if (auth.Username == null || auth.Username == "")
+            if (!ModelState.IsValid)
             {
-                return Conflict("Tên đăng nhập là bắt buộc!");
+                var errors = ModelState.Where(x => x.Value.Errors.Count > 0)
+                                       .ToDictionary(
+                                           kvp => kvp.Key,
+                                           kvp => kvp.Value.Errors.Select(e => e.ErrorMessage).ToArray()
+                                       );
+
+                return BadRequest(errors);
             }
 
-            if (auth.Password == null || auth.Password == "")
-            {
-                return Conflict("Mật khẩu là bắt buộc!");
-            }
-
-            var hash = MD5Hash(auth.Password);
-            var find_user = _context.Users.FirstOrDefault(u => u.TenDangNhap == auth.Username);
-            if (find_user == null)
+            var user = _context.Users.FirstOrDefault(u => u.TenDangNhap == auth.Username && !u.IsDeleted);
+            if (user == null)
             {
                 return Conflict("Tài khoản không tồn tại!");
             }
 
-            if (find_user.MatKhau != hash)
+            var hashedPassword = MD5Hash(auth.Password);
+            if (user.MatKhau != hashedPassword)
             {
-                return Conflict("Mật khẩu sai, vui lòng nhập lại mật khẩu!");
+                return Conflict("Mật khẩu không đúng!");
             }
 
-            var token = _tokenService.GenerateToken(find_user);
+            var token = _tokenService.GenerateToken(user);
+
             return Ok(new AuthResponse { Token = token });
         }
+
 
 
         private string MD5Hash(string input)

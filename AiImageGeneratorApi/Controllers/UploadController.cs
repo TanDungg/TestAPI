@@ -59,7 +59,7 @@ public class UploadController : ControllerBase
             return new UploadFile
             {
                 FileName = file.FileName,
-                Path = Path.Combine(relativePath, fileName).Replace("\\", "/")
+                Path = "/" + Path.Combine(relativePath, fileName).Replace("\\", "/")
             };
         }
     }

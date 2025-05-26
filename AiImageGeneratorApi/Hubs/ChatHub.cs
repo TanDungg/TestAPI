@@ -13,5 +13,17 @@ namespace AiImageGeneratorApi.Hubs
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupId);
         }
+        public override Task OnConnectedAsync()
+        {
+            var userId = Context.UserIdentifier ?? "(null)";
+            var connectionId = Context.ConnectionId;
+
+            var logPath = Path.Combine(AppContext.BaseDirectory, "signalr-log.txt");
+            File.AppendAllText(logPath, $"[{DateTime.Now}] Connected: ConnectionId={connectionId}, UserIdentifier={userId}{Environment.NewLine}");
+
+            return base.OnConnectedAsync();
+        }
+
+
     }
 }

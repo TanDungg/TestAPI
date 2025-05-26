@@ -14,12 +14,16 @@ namespace AiImageGeneratorApi.Repositories
             _dbSet = context.Set<T>();
         }
         public DbSet<T> DbSet => _dbSet;
+        public async Task<IEnumerable<T>> GetAllAsync() => await _dbSet.ToListAsync();
         public async Task<T> GetByIdAsync(object id) => await _dbSet.FindAsync(id);
 
-        public async Task<IEnumerable<T>> GetAllAsync() => await _dbSet.ToListAsync();
         public async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate)
         {
             return await _dbSet.Where(predicate).ToListAsync();
+        }
+        public IQueryable<T> AsQueryable()
+        {
+            return _dbSet.AsQueryable();
         }
         public async Task AddAsync(T entity) => await _dbSet.AddAsync(entity);
 

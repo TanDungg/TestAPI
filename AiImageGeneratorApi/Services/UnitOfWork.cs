@@ -3,6 +3,8 @@ using AiImageGeneratorApi.Interfaces;
 using AiImageGeneratorApi.Models.Entities;
 using AiImageGeneratorApi.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
 
 namespace AiImageGeneratorApi.Services
 {
@@ -22,8 +24,12 @@ namespace AiImageGeneratorApi.Services
         public UnitOfWork(ApplicationDbContext context)
         {
             _context = context;
+            Connection = _context.Database.GetDbConnection();
         }
         public DbContext Context => _context;
+        public IDbConnection Connection { get; }
+        public IDbTransaction Transaction => _context.Database.CurrentTransaction?.GetDbTransaction();
+
         public IGenericRepository<User> Users => _users ??= new GenericRepository<User>(_context);
         public IGenericRepository<Menu> Menus => _menus ??= new GenericRepository<Menu>(_context);
         public IGenericRepository<Role> Roles => _roles ??= new GenericRepository<Role>(_context);

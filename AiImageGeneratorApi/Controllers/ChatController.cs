@@ -69,20 +69,27 @@ namespace AiImageGeneratorApi.Controllers
             await _unitOfWork.CompleteAsync();
 
             var currentUser = await _currentUserInfo.Value;
+
+            // ✅ Nếu là nhóm, lấy thêm tên nhóm
+            string tenNhom = null;
+            string hinhAnh = null;
+            if (message.NhomId.HasValue)
+            {
+                var nhom = await _unitOfWork.ChatGroups.GetByIdAsync(message.NhomId.Value);
+                tenNhom = nhom?.TenNhom;
+                hinhAnh = nhom?.HinhAnh;
+            }
+
             var messageDto = new
             {
                 message.Id,
                 message.TinNhan,
-                message.NguoiGuiId,
-                message.NguoiNhanId,
                 message.NhomId,
+                message.NguoiGuiId,
+                Ten = message.NhomId.HasValue ? tenNhom : currentUser.HoVaTen,
+                HinhAnh = message.NhomId.HasValue ? hinhAnh : currentUser.HinhAnh,
+                message.NguoiNhanId,
                 message.CreatedAt,
-                NguoiGui = new
-                {
-                    currentUser.Id,
-                    currentUser.HoVaTen,
-                    currentUser.HinhAnh
-                },
                 Files = message.Files.Select(f => new {
                     f.Id,
                     f.FileUrl
@@ -96,11 +103,14 @@ namespace AiImageGeneratorApi.Controllers
             }
             else
             {
-                await _hubContext.Clients.User(message.NguoiNhanId.ToString())
+                var nguoiNhanId = message.NguoiNhanId.ToString();
+                var nguoiGuiId = _currentUserId.ToString();
+
+                await _hubContext.Clients.Users(nguoiGuiId, nguoiNhanId)
                     .SendAsync("ReceiveNotification", messageDto);
             }
 
-            return Ok();
+            return Ok(messageDto); 
         }
 
         [HttpGet("messages/{userId}")]
@@ -178,6 +188,7 @@ namespace AiImageGeneratorApi.Controllers
         {
             var userId = _currentUserId;
 
+            // Lấy tin nhắn 1-1 liên quan đến user
             var messages = await _unitOfWork.ChatMessages
                 .FindAsync(m => (m.NguoiGuiId == userId || m.NguoiNhanId == userId) && m.NhomId == null && !m.IsDeleted);
 
@@ -200,6 +211,7 @@ namespace AiImageGeneratorApi.Controllers
                     };
                 }).ToList();
 
+            // Lấy tin nhắn nhóm liên quan
             var joinedGroups = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.ThanhVienId == userId);
             var groupIds = joinedGroups.Select(j => j.NhomId).ToList();
 
@@ -225,16 +237,34 @@ namespace AiImageGeneratorApi.Controllers
                     };
                 }).ToList();
 
-            var users = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
+            // Tập hợp ID người dùng và nhóm cần lấy thêm thông tin
+            var userIds = userMessages.Select(x => x.Id).Distinct().ToList();
+            var groupIdsToFetch = groupData.Select(x => x.Id).Distinct().ToList();
+
+            var users = await _unitOfWork.Users.FindAsync(u => userIds.Contains(u.Id) && !u.IsDeleted);
+            var groups = await _unitOfWork.ChatGroups.FindAsync(g => groupIdsToFetch.Contains(g.Id));
+
             var userMap = users.ToDictionary(u => u.Id, u => u.HoVaTen);
+            var userAvatarMap = users.ToDictionary(u => u.Id, u => u.HinhAnh);
 
-            var groups = await _unitOfWork.ChatGroups.FindAsync(g => true);
             var groupMap = groups.ToDictionary(g => g.Id, g => g.TenNhom);
+            var groupAvatarMap = groups.ToDictionary(g => g.Id, g => g.HinhAnh);
 
+            // Gán tên và hình ảnh
             var all = userMessages.Concat(groupData)
                 .Select(x =>
                 {
-                    x.Ten = x.IsNhom ? groupMap.GetValueOrDefault(x.Id) : userMap.GetValueOrDefault(x.Id);
+                    if (x.IsNhom)
+                    {
+                        x.Ten = groupMap.GetValueOrDefault(x.Id);
+                        x.HinhAnh = groupAvatarMap.GetValueOrDefault(x.Id);
+                    }
+                    else
+                    {
+                        x.Ten = userMap.GetValueOrDefault(x.Id);
+                        x.HinhAnh = userAvatarMap.GetValueOrDefault(x.Id);
+                    }
+
                     return x;
                 })
                 .OrderByDescending(x => x.ThoiGianNhan)
@@ -242,7 +272,6 @@ namespace AiImageGeneratorApi.Controllers
 
             return Ok(all);
         }
-
 
         //[HttpPut("message/{id}")]
         //public async Task<IActionResult> EditMessage(Guid id, [FromBody] EditMessageDto dto)
@@ -300,6 +329,7 @@ namespace AiImageGeneratorApi.Controllers
             {
                 Id = Guid.NewGuid(),
                 TenNhom = dto.TenNhom,
+                HinhAnh = dto.HinhAnh,
                 TruongNhomId = _currentUserId,
                 CreatedAt = DateTime.Now,
                 CreatedBy = _currentUserId,
@@ -473,6 +503,80 @@ namespace AiImageGeneratorApi.Controllers
 
             await _unitOfWork.CompleteAsync();
             return Ok();
+        }
+
+        [HttpGet("search")]
+        public async Task<IActionResult> SearchMessages([FromQuery] Guid? userId, [FromQuery] Guid? groupId, [FromQuery] string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+                return BadRequest("Từ khóa không được để trống.");
+
+            if (userId == null && groupId == null)
+                return BadRequest("Phải cung cấp userId hoặc groupId.");
+
+            IQueryable<ChatMessage> query = _unitOfWork.ChatMessages.AsQueryable();
+
+            if (groupId != null)
+            {
+                // Kiểm tra người dùng có trong nhóm không
+                var isMember = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.NhomId == groupId && m.ThanhVienId == _currentUserId);
+                if (isMember == null || !isMember.Any()) return Forbid();
+
+                query = query.Where(m => m.NhomId == groupId && !m.IsDeleted && m.TinNhan.Contains(keyword));
+            }
+            else if (userId != null)
+            {
+                query = query.Where(m =>
+                    m.NhomId == null &&
+                    !m.IsDeleted &&
+                    (
+                        (m.NguoiGuiId == _currentUserId && m.NguoiNhanId == userId) ||
+                        (m.NguoiGuiId == userId && m.NguoiNhanId == _currentUserId)
+                    ) &&
+                    m.TinNhan.Contains(keyword));
+            }
+
+            var results = await query
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(100) // Giới hạn kết quả
+                .Select(m => new
+                {
+                    m.Id,
+                    m.TinNhan,
+                    m.CreatedAt,
+                    m.NguoiGuiId,
+                    m.NguoiNhanId,
+                    m.NhomId,
+                    Files = m.Files.Select(f => new { f.Id, f.FileUrl })
+                })
+                .ToListAsync();
+
+            return Ok(results);
+        }
+
+        [HttpGet("search-all")]
+        public async Task<IActionResult> SearchAll([FromQuery] string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+                return BadRequest("Từ khóa không được để trống.");
+
+            var userId = _currentUserId;
+
+            string sql = "EXEC sp_SearchUsersAndMessages @UserId, @Keyword";
+
+            using var multi = await _unitOfWork.Connection.QueryMultipleAsync(
+                sql,
+                new { UserId = userId, Keyword = keyword },
+                transaction: _unitOfWork.Transaction);
+
+            var users = (await multi.ReadAsync()).ToList();
+            var messages = (await multi.ReadAsync()).ToList();
+
+            return Ok(new
+            {
+                Users = users,
+                Messages = messages
+            });
         }
     }
 }

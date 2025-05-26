@@ -23,6 +23,7 @@
     public class ChatGroup : BaseEntity
     {
         public string TenNhom { get; set; }
+        public string HinhAnh { get; set; }
         public Guid TruongNhomId { get; set; }
     }
 

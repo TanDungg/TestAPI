@@ -6,9 +6,10 @@ namespace AiImageGeneratorApi.Repositories
     public interface IGenericRepository<T> where T : class
     {
         DbSet<T> DbSet { get; }
-        Task<T> GetByIdAsync(object id);
         Task<IEnumerable<T>> GetAllAsync();
+        Task<T> GetByIdAsync(object id);
         Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate);
+        IQueryable<T> AsQueryable();
         Task<T> FirstOrDefaultAsync(Expression<Func<T, bool>> predicate, bool ignoreQueryFilters = false);
         Task AddAsync(T entity);
         void Update(T entity);

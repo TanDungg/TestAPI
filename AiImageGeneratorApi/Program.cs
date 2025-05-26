@@ -28,15 +28,39 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         options.Events = new JwtBearerEvents
         {
+            //OnMessageReceived = context =>
+            //{
+            //    var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+            //    if (!string.IsNullOrEmpty(authHeader))
+            //    {
+            //        context.Token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            //            ? authHeader["Bearer ".Length..]
+            //            : authHeader;
+            //    }
+            //    return Task.CompletedTask;
+            //}
             OnMessageReceived = context =>
             {
-                var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
-                if (!string.IsNullOrEmpty(authHeader))
+                // 👇 Thêm đoạn này để hỗ trợ SignalR qua query string
+                var accessToken = context.Request.Query["access_token"];
+
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/chatHub"))
                 {
-                    context.Token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-                        ? authHeader["Bearer ".Length..]
-                        : authHeader;
+                    context.Token = accessToken;
                 }
+                else
+                {
+                    // Giữ đoạn này để Swagger và API thường vẫn hoạt động
+                    var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+                    if (!string.IsNullOrEmpty(authHeader))
+                    {
+                        context.Token = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                            ? authHeader["Bearer ".Length..]
+                            : authHeader;
+                    }
+                }
+
                 return Task.CompletedTask;
             }
         };
@@ -106,12 +130,13 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAll", policy =>
     {
         policy
-            .WithOrigins("http://localhost:5173") 
+            .SetIsOriginAllowed(_ => true)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
     });
 });
+builder.Services.AddSingleton<IUserIdProvider, CustomUserIdProvider>();
 
 var app = builder.Build();
 // Use CORS
