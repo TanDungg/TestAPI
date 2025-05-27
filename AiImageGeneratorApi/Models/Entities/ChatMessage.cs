@@ -18,6 +18,7 @@
         public bool IsThongBao { get; set; } = false;
         public string? LoaiThongBao { get; set; } = null;
         public ICollection<ChatMessageFile> Files { get; set; } = new List<ChatMessageFile>();
+        public ICollection<ChatMessageRead> Reads { get; set; }
     }
 
     public class ChatGroup : BaseEntity
@@ -43,6 +44,5 @@
         public ChatMessage Message { get; set; }
         public User User { get; set; }
     }
-
 
 }

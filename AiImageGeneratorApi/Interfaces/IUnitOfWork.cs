@@ -1,4 +1,5 @@
-﻿using AiImageGeneratorApi.Models.Entities;
+﻿using AiImageGeneratorApi.Data;
+using AiImageGeneratorApi.Models.Entities;
 using AiImageGeneratorApi.Repositories;
 using System.Data;
 
@@ -6,6 +7,7 @@ namespace AiImageGeneratorApi.Interfaces
 {
     public interface IUnitOfWork : IDisposable
     {
+        ApplicationDbContext DbContext { get; }
         IDbConnection Connection { get; }
         IDbTransaction Transaction { get; }
 

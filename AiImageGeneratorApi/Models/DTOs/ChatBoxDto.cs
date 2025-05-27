@@ -3,10 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace AiImageGeneratorApi.Models.DTOs
 {
-    public class ChatFileDto
-    {
-        public string FileUrl { get; set; }
-    }
+    /* Dto gửi tin nhắn */
     public class SendMessageDto
     {
         public Guid? NguoiNhanId { get; set; }
@@ -15,15 +12,56 @@ namespace AiImageGeneratorApi.Models.DTOs
         public List<ChatFileDto>? List_Files { get; set; }
     }
 
-    public class ChatUserInfoDto
+    public class ChatFileDto
     {
-        public Guid NguoiNhanId { get; set; }
-        public string HoVaTen { get; set; }
-        public string DiaChi { get; set; }
-        public string Email { get; set; }
-        public string Sdt { get; set; }
+        public string FileUrl { get; set; }
+    }
+
+    /* Dto lấy danh sách user và group */
+    public class ListChatDto
+    {
+        public Guid Id { get; set; }
+        public bool IsNhom { get; set; }
+        public string Ten { get; set; }
         public string HinhAnh { get; set; }
+        public string TinNhanMoiNhat { get; set; }
+        public string ThoiGianNhan { get; set; }
+        public int SoLuongChuaXem { get; set; }
+        public bool IsGui { get; set; }
+        public bool IsThongBao { get; set; }
+    }
+
+    /* Dto lấy danh sách tin nhắn cả user và group */
+    [Keyless]
+    public class ChatInfoMessage
+    {
+        public Guid Id { get; set; }
+        public string Ten { get; set; }
+        public string HinhAnh { get; set; }
+        public bool IsNhom { get; set; }
+        public string? SoLuongThanhVien { get; set; }
         public string List_Ngays { get; set; }
+    }
+    public class ChatMessageGroupedByDateDto
+    {
+        public string Ngay { get; set; }
+        public List<ChatMessageDto> List_Messages { get; set; }
+    }
+    public class ChatMessageDto
+    {
+        public Guid Id { get; set; }
+        public Guid NguoiGuiId { get; set; }
+        public string? TenNguoiGui { get; set; }
+        public string? HinhAnh { get; set; }
+        public string TinNhan { get; set; }
+        public Guid? NguoiNhanId { get; set; }
+        public string? TenNguoiNhan { get; set; }
+        public string ThoiGianGui { get; set; }
+        public bool IsSend { get; set; }
+        public bool IsRead { get; set; }
+        public bool IsThongBao { get; set; }
+        public string? LoaiThongBao { get; set; }
+        public List<ChatFileDto> List_Files { get; set; }
     }
 
     public class CreateGroupDto
@@ -37,50 +75,5 @@ namespace AiImageGeneratorApi.Models.DTOs
     {
         public string TenNhom { get; set; }
         public string HinhAnh { get; set; }
-    }
-
-    [Keyless]
-    public class ChatGroupInfoDto
-    {
-        public Guid NhomId { get; set; }
-        public string TenNhom { get; set; }
-        public string HinhAnh { get; set; }
-
-        public string List_Ngays { get; set; }
-    }
-
-    public class ChatMessageGroupedByDateDto
-    {
-        public string Ngay { get; set; }
-        public List<ChatMessageDto> List_Messages { get; set; }
-    }
-
-    public class ChatSummaryDto
-    {
-        public Guid Id { get; set; }
-        public bool IsNhom { get; set; }
-        public string Ten { get; set; }
-        public string HinhAnh { get; set; }
-        public string TinNhanMoiNhat { get; set; }
-        public string ThoiGianNhan { get; set; }
-        public int SoLuongChuaXem { get; set; }
-        public bool IsGui { get; set; }
-        public bool IsThongBao { get; set; }
-    }
-
-    public class ChatMessageDto
-    {
-        public Guid Id { get; set; }
-        public Guid NguoiGuiId { get; set; }
-        public string? TenNguoiGui { get; set; }
-        public string TinNhan { get; set; }
-        public Guid? NguoiNhanId { get; set; }
-        public string? TenNguoiNhan { get; set; }
-        public string ThoiGianGui { get; set; }
-        public bool IsSend { get; set; }
-        public bool IsRead { get; set; }
-        public bool IsThongBao { get; set; }
-        public string? LoaiThongBao { get; set; }
-        public List<ChatFileDto> List_Files { get; set; }
-    }
+    }                 
 }

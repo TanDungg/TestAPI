@@ -6,8 +6,6 @@ namespace AiImageGeneratorApi.Data
 {
     public class ApplicationDbContext : DbContext
     {
-        public DbSet<ChatMessageDto> ChatMessageDtos { get; set; }
-
         public ApplicationDbContext(DbContextOptions options) : base(options) { }
         public DbSet<ChatMessageDto> ChatMessageDto { get; set; }
 
@@ -28,8 +26,24 @@ namespace AiImageGeneratorApi.Data
             modelBuilder.Entity<GeneratedImage>().HasQueryFilter(g => !g.IsDeleted);
             base.OnModelCreating(modelBuilder);
             modelBuilder.Entity<ChatMessageDto>().HasNoKey();
-            modelBuilder.Entity<ChatUserInfoDto>().HasNoKey();
-            modelBuilder.Entity<ChatGroupInfoDto>().HasNoKey();
+            modelBuilder.Entity<ChatInfoMessage>().HasNoKey();
+            modelBuilder.Entity<ListChatDto>().HasNoKey();
+            modelBuilder.Entity<ChatMessageRead>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                // FK -> ChatMessages.Id
+                entity.HasOne(e => e.Message)
+                    .WithMany(m => m.Reads)
+                    .HasForeignKey(e => e.TinNhanId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                // FK -> Users.Id
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.ThanhVienId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
         }
     }
 

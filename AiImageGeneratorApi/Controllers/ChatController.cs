@@ -70,7 +70,6 @@ namespace AiImageGeneratorApi.Controllers
 
             var currentUser = await _currentUserInfo.Value;
 
-            // ✅ Nếu là nhóm, lấy thêm tên nhóm
             string tenNhom = null;
             string hinhAnh = null;
             if (message.NhomId.HasValue)
@@ -90,7 +89,8 @@ namespace AiImageGeneratorApi.Controllers
                 HinhAnh = message.NhomId.HasValue ? hinhAnh : currentUser.HinhAnh,
                 message.NguoiNhanId,
                 message.CreatedAt,
-                Files = message.Files.Select(f => new {
+                Files = message.Files.Select(f => new
+                {
                     f.Id,
                     f.FileUrl
                 }).ToList()
@@ -110,85 +110,14 @@ namespace AiImageGeneratorApi.Controllers
                     .SendAsync("ReceiveNotification", messageDto);
             }
 
-            return Ok(messageDto); 
+            return Ok(messageDto);
         }
-
-        [HttpGet("messages/{userId}")]
-        public async Task<IActionResult> GetPrivateMessagesBySP(Guid userId)
-        {
-            var currentUserId = _currentUserId;
-
-            string sql = "EXEC sp_GetPrivateMessages {0}, {1}";
-            var result = await _unitOfWork.ChatMessages
-                .ExecuteStoredProcedureAsync<ChatUserInfoDto>(sql, currentUserId, userId);
-
-            if (result == null || result.Count == 0)
-                return NotFound();
-
-            var raw = result.First();
-
-            // Parse danh sách theo ngày từ JSON
-            var parsedNgays = new List<ChatMessageGroupedByDateDto>();
-            if (!string.IsNullOrWhiteSpace(raw.List_Ngays))
-            {
-                parsedNgays = JsonConvert.DeserializeObject<List<ChatMessageGroupedByDateDto>>(raw.List_Ngays);
-            }
-
-            return Ok(new
-            {
-                raw.NguoiNhanId,
-                raw.HoVaTen,
-                raw.DiaChi,
-                raw.Email,
-                raw.Sdt,
-                raw.HinhAnh,
-                List_Ngays = parsedNgays
-            });
-        }
-
-
-
-        [HttpGet("group/messages/{groupId}")]
-        public async Task<IActionResult> GetGroupMessages(Guid groupId)
-        {
-            // Kiểm tra quyền thành viên
-            var isMember = await _unitOfWork.ChatGroupMembers.FindAsync(m =>
-                m.NhomId == groupId && m.ThanhVienId == _currentUserId);
-
-            if (isMember == null || !isMember.Any()) return Forbid();
-
-            // Gọi stored procedure
-            string sql = "EXEC sp_GetGroupMessages {0}, {1}";
-            var result = await _unitOfWork.ChatMessages
-                .ExecuteStoredProcedureAsync<ChatGroupInfoDto>(sql, groupId, _currentUserId);
-
-            if (result == null || result.Count == 0)
-                return NotFound();
-
-            var raw = result.First();
-
-            var parsedGroups = new List<ChatMessageGroupedByDateDto>();
-            if (!string.IsNullOrWhiteSpace(raw.List_Ngays))
-            {
-                parsedGroups = JsonConvert.DeserializeObject<List<ChatMessageGroupedByDateDto>>(raw.List_Ngays);
-            }
-
-            return Ok(new
-            {
-                raw.NhomId,
-                raw.TenNhom,
-                List_Ngays = parsedGroups
-            });
-        }
-
-
 
         [HttpGet("list-message")]
-        public async Task<IActionResult> GetRecentChats()
+        public async Task<IActionResult> GetListMessage()
         {
             var userId = _currentUserId;
 
-            // Lấy tin nhắn 1-1 liên quan đến user
             var messages = await _unitOfWork.ChatMessages
                 .FindAsync(m => (m.NguoiGuiId == userId || m.NguoiNhanId == userId) && m.NhomId == null && !m.IsDeleted);
 
@@ -199,7 +128,7 @@ namespace AiImageGeneratorApi.Controllers
                     var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
                     var unreadCount = group.Count(m => m.NguoiNhanId == userId && !m.IsRead);
 
-                    return new ChatSummaryDto
+                    return new ListChatDto
                     {
                         IsNhom = false,
                         Id = group.Key ?? Guid.Empty,
@@ -211,21 +140,27 @@ namespace AiImageGeneratorApi.Controllers
                     };
                 }).ToList();
 
-            // Lấy tin nhắn nhóm liên quan
             var joinedGroups = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.ThanhVienId == userId);
             var groupIds = joinedGroups.Select(j => j.NhomId).ToList();
 
             var groupMessages = await _unitOfWork.ChatMessages
                 .FindAsync(m => m.NhomId != null && groupIds.Contains(m.NhomId.Value) && !m.IsDeleted);
 
+            var allGroupMessageIds = groupMessages.Select(m => m.Id).ToList();
+
+            var groupReads = await _unitOfWork.ChatMessageReads
+                .FindAsync(r => r.ThanhVienId == userId && allGroupMessageIds.Contains(r.TinNhanId));
+
+            var readMessageIdSet = new HashSet<Guid>(groupReads.Select(r => r.TinNhanId));
+
             var groupData = groupMessages
                 .GroupBy(m => m.NhomId.Value)
                 .Select(group =>
                 {
                     var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
-                    var unreadCount = group.Count(m => !m.IsRead && m.NguoiGuiId != userId);
+                    var unreadCount = group.Count(m => m.NguoiGuiId != userId && !readMessageIdSet.Contains(m.Id));
 
-                    return new ChatSummaryDto
+                    return new ListChatDto
                     {
                         IsNhom = true,
                         Id = group.Key,
@@ -237,7 +172,6 @@ namespace AiImageGeneratorApi.Controllers
                     };
                 }).ToList();
 
-            // Tập hợp ID người dùng và nhóm cần lấy thêm thông tin
             var userIds = userMessages.Select(x => x.Id).Distinct().ToList();
             var groupIdsToFetch = groupData.Select(x => x.Id).Distinct().ToList();
 
@@ -250,7 +184,6 @@ namespace AiImageGeneratorApi.Controllers
             var groupMap = groups.ToDictionary(g => g.Id, g => g.TenNhom);
             var groupAvatarMap = groups.ToDictionary(g => g.Id, g => g.HinhAnh);
 
-            // Gán tên và hình ảnh
             var all = userMessages.Concat(groupData)
                 .Select(x =>
                 {
@@ -273,54 +206,61 @@ namespace AiImageGeneratorApi.Controllers
             return Ok(all);
         }
 
-        //[HttpPut("message/{id}")]
-        //public async Task<IActionResult> EditMessage(Guid id, [FromBody] EditMessageDto dto)
-        //{
-        //    var msg = await _unitOfWork.ChatMessages.GetByIdAsync(id);
-        //    if (msg == null || msg.NguoiGuiId != _currentUserId) return Forbid();
-
-        //    msg.TinNhan = dto.TinNhan;
-        //    msg.UpdatedAt = DateTime.Now;
-
-        //    _unitOfWork.ChatMessages.Update(msg);
-        //    await _unitOfWork.CompleteAsync();
-        //    return Ok();
-        //}
-
-        [HttpDelete("message/{id}")]
-        public async Task<IActionResult> DeleteMessage(Guid id)
+        [HttpGet("messages")]
+        public async Task<IActionResult> GetChatMessages([FromQuery] bool isNhom, [FromQuery] Guid id)
         {
-            var msg = await _unitOfWork.ChatMessages.GetByIdAsync(id);
-            if (msg == null) return NotFound();
-
-            bool isGroupOwner = msg.NhomId != null &&
-                (await _unitOfWork.ChatGroups.GetByIdAsync(msg.NhomId.Value))?.TruongNhomId == _currentUserId;
-
-            if (msg.NguoiGuiId != _currentUserId && !isGroupOwner) return Forbid();
-
-            msg.IsDeleted = true;
-            _unitOfWork.ChatMessages.Update(msg);
-            await _unitOfWork.CompleteAsync();
-            return Ok();
-        }
-
-        [HttpDelete("messages")]
-        public async Task<IActionResult> DeleteMultipleMessages([FromBody] List<Guid> ids)
-        {
-            var messages = await _unitOfWork.ChatMessages.FindAsync(m => ids.Contains(m.Id));
-            foreach (var msg in messages)
+            if (isNhom)
             {
-                bool isGroupOwner = msg.NhomId != null &&
-                    (await _unitOfWork.ChatGroups.GetByIdAsync(msg.NhomId.Value))?.TruongNhomId == _currentUserId;
-                if (msg.NguoiGuiId == _currentUserId || isGroupOwner)
-                {
-                    msg.IsDeleted = true;
-                    _unitOfWork.ChatMessages.Update(msg);
-                }
+                var isMember = await _unitOfWork.ChatGroupMembers.FindAsync(m =>
+                    m.NhomId == id && m.ThanhVienId == _currentUserId);
+                if (isMember == null || !isMember.Any()) return Forbid();
             }
-            await _unitOfWork.CompleteAsync();
-            return Ok();
+
+            string sql = "EXEC sp_GetChatInfoMessages {0}, {1}, {2}";
+            var result = await _unitOfWork.ChatMessages
+                .ExecuteStoredProcedureAsync<ChatInfoMessage>(sql, isNhom, id, _currentUserId);
+
+            if (result == null || result.Count == 0)
+                return NotFound();
+
+            var raw = result.First();
+
+            var parsedNgays = new List<ChatMessageGroupedByDateDto>();
+            if (!string.IsNullOrWhiteSpace(raw.List_Ngays))
+            {
+                parsedNgays = JsonConvert.DeserializeObject<List<ChatMessageGroupedByDateDto>>(raw.List_Ngays);
+            }
+
+            return Ok(new
+            {
+                raw.Id,
+                raw.Ten,
+                raw.HinhAnh,
+                raw.IsNhom,
+                raw.SoLuongThanhVien,
+                List_Ngays = parsedNgays
+            });
         }
+
+        [HttpGet("group")]
+        public async Task<IActionResult> GetMyGroups()
+        {
+            var groups = await (
+                from m in _unitOfWork.DbContext.ChatGroupMembers
+                join g in _unitOfWork.DbContext.ChatGroups on m.NhomId equals g.Id
+                where m.ThanhVienId == _currentUserId && !m.IsDeleted && !g.IsDeleted
+                select new
+                {
+                    g.Id,
+                    g.TenNhom,
+                    g.HinhAnh,
+                    g.TruongNhomId
+                }
+            ).ToListAsync();
+
+            return Ok(groups);
+        }
+
 
         [HttpPost("group")]
         public async Task<IActionResult> CreateGroup([FromBody] CreateGroupDto dto)
@@ -460,18 +400,21 @@ namespace AiImageGeneratorApi.Controllers
 
             if (isNhom)
             {
-                // Đánh dấu đã đọc tin nhắn nhóm
-                var messages = await _unitOfWork.ChatMessages.FindAsync(m =>
+                // Lấy tất cả tin nhắn nhóm chưa bị xóa
+                var list_messages = await _unitOfWork.ChatMessages.FindAsync(m =>
                     m.NhomId == id &&
                     !m.IsDeleted);
 
-                var messageIds = messages.Select(m => m.Id).ToList();
+                var messageIds = list_messages.Select(m => m.Id).ToList();
 
+                // Lấy các bản ghi đã đọc của user hiện tại
                 var existingReads = await _unitOfWork.ChatMessageReads.FindAsync(r =>
                     r.ThanhVienId == _currentUserId && messageIds.Contains(r.TinNhanId));
-                var readMessageIds = existingReads.Select(r => r.TinNhanId).ToHashSet();
 
-                var unreadMessages = messages.Where(m => !readMessageIds.Contains(m.Id));
+                var readMessageIds = new HashSet<Guid>(existingReads.Select(r => r.TinNhanId));
+
+                // Chỉ chọn những tin chưa đọc
+                var unreadMessages = list_messages.Where(m => !readMessageIds.Contains(m.Id)).ToList();
 
                 foreach (var msg in unreadMessages)
                 {
@@ -482,9 +425,11 @@ namespace AiImageGeneratorApi.Controllers
                         TinNhanId = msg.Id,
                         ThoiGianXem = DateTime.Now
                     };
+
                     await _unitOfWork.ChatMessageReads.AddAsync(read);
                 }
             }
+
             else
             {
                 // Đánh dấu đã đọc tin nhắn 1-1
@@ -577,6 +522,41 @@ namespace AiImageGeneratorApi.Controllers
                 Users = users,
                 Messages = messages
             });
+        }
+
+        [HttpDelete("message/{id}")]
+        public async Task<IActionResult> DeleteMessage(Guid id)
+        {
+            var msg = await _unitOfWork.ChatMessages.GetByIdAsync(id);
+            if (msg == null) return NotFound();
+
+            bool isGroupOwner = msg.NhomId != null &&
+                (await _unitOfWork.ChatGroups.GetByIdAsync(msg.NhomId.Value))?.TruongNhomId == _currentUserId;
+
+            if (msg.NguoiGuiId != _currentUserId && !isGroupOwner) return Forbid();
+
+            msg.IsDeleted = true;
+            _unitOfWork.ChatMessages.Update(msg);
+            await _unitOfWork.CompleteAsync();
+            return Ok();
+        }
+
+        [HttpDelete("messages")]
+        public async Task<IActionResult> DeleteMultipleMessages([FromBody] List<Guid> ids)
+        {
+            var messages = await _unitOfWork.ChatMessages.FindAsync(m => ids.Contains(m.Id));
+            foreach (var msg in messages)
+            {
+                bool isGroupOwner = msg.NhomId != null &&
+                    (await _unitOfWork.ChatGroups.GetByIdAsync(msg.NhomId.Value))?.TruongNhomId == _currentUserId;
+                if (msg.NguoiGuiId == _currentUserId || isGroupOwner)
+                {
+                    msg.IsDeleted = true;
+                    _unitOfWork.ChatMessages.Update(msg);
+                }
+            }
+            await _unitOfWork.CompleteAsync();
+            return Ok();
         }
     }
 }

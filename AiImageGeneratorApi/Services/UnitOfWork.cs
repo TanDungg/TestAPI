@@ -21,6 +21,7 @@ namespace AiImageGeneratorApi.Services
         private IGenericRepository<ChatGroupMember> _chatGroupMembers;
         private IGenericRepository<ChatMessageRead> _chatMessageReads;
 
+        public ApplicationDbContext DbContext => _context;
         public UnitOfWork(ApplicationDbContext context)
         {
             _context = context;
