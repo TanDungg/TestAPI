@@ -104,9 +104,9 @@ namespace AiImageGeneratorApi.Controllers
             else
             {
                 var nguoiNhanId = message.NguoiNhanId.ToString();
-                var nguoiGuiId = _currentUserId.ToString();
+                //var nguoiGuiId = _currentUserId.ToString();
 
-                await _hubContext.Clients.Users(nguoiGuiId, nguoiNhanId)
+                await _hubContext.Clients.Users(nguoiNhanId)
                     .SendAsync("ReceiveNotification", messageDto);
             }
 
