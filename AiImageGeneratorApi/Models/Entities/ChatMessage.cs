@@ -1,4 +1,7 @@
-﻿namespace AiImageGeneratorApi.Models.Entities
+﻿using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations;
+
+namespace AiImageGeneratorApi.Models.Entities
 {
     public class ChatMessageFile : BaseEntity
     {

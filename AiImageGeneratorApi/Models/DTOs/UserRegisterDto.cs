@@ -4,6 +4,7 @@ namespace AiImageGeneratorApi.Models.DTOs
 {
     public class UserRegisterDto
     {
+        public Guid Id { get; set; }
         [Required(ErrorMessage = "Tên đăng nhập là bắt buộc")]
         public string TenDangNhap { get; set; }
 

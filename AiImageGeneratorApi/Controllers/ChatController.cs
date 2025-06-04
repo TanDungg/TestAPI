@@ -26,12 +26,31 @@ namespace AiImageGeneratorApi.Controllers
         private readonly Lazy<Task<User>> _currentUserInfo;
         private readonly IHubContext<ChatHub> _hubContext;
 
-        public ChatController(IUnitOfWork unitOfWork, IHttpContextAccessor httpContextAccessor, IHubContext<ChatHub> hubContext)
+        public ChatController(IUnitOfWork unitOfWork, IHttpContextAccessor httpContextAccessor, IHubContext<ChatHub> hubContext, ApplicationDbContext dbContext)
         {
             _unitOfWork = unitOfWork;
+            _dbContext = dbContext;
             _hubContext = hubContext;
             _currentUserId = Guid.Parse(httpContextAccessor.HttpContext.User.FindFirstValue(ClaimTypes.NameIdentifier));
             _currentUserInfo = new Lazy<Task<User>>(() => _unitOfWork.Users.GetByIdAsync(_currentUserId));
+        }
+
+        private async Task NotifyGroup(ChatMessage msg)
+        {
+            var user = await _currentUserInfo.Value;
+
+            await _hubContext.Clients.Group(msg.NhomId.ToString())
+                .SendAsync("ReceiveNotification", new
+                {
+                    msg.Id,
+                    msg.TinNhan,
+                    msg.NhomId,
+                    msg.NguoiGuiId,
+                    Ten = user.HoVaTen,
+                    HinhAnh = user.HinhAnh,
+                    msg.CreatedAt,
+                    Files = new List<object>()
+                });
         }
 
         [HttpPost("messages")]
@@ -295,6 +314,20 @@ namespace AiImageGeneratorApi.Controllers
             };
             await _unitOfWork.ChatMessages.AddAsync(systemMessage);
             await _unitOfWork.CompleteAsync();
+
+            // Gửi thông báo cho nhóm mới
+            await NotifyGroup(systemMessage);
+
+            // Gửi event tạo nhóm cho từng thành viên
+            foreach (var uid in members.Select(x => x.ThanhVienId))
+            {
+                await _hubContext.Clients.User(uid.ToString()).SendAsync("NewGroupCreated", new
+                {
+                    group.Id,
+                    group.TenNhom,
+                    group.HinhAnh
+                });
+            }
             return Ok();
         }
 
@@ -306,7 +339,21 @@ namespace AiImageGeneratorApi.Controllers
 
             group.TenNhom = dto.TenNhom;
             _unitOfWork.ChatGroups.Update(group);
+
+            var notifyMsg = new ChatMessage
+            {
+                Id = Guid.NewGuid(),
+                NguoiGuiId = _currentUserId,
+                NhomId = groupId,
+                TinNhan = $"Nhóm đã đổi tên thành \"{dto.TenNhom}\".",
+                IsThongBao = true,
+                LoaiThongBao = "RenameGroup",
+                CreatedAt = DateTime.Now
+            };
+            await _unitOfWork.ChatMessages.AddAsync(notifyMsg);
             await _unitOfWork.CompleteAsync();
+
+            await NotifyGroup(notifyMsg);
             return Ok();
         }
 
@@ -321,11 +368,17 @@ namespace AiImageGeneratorApi.Controllers
 
             foreach (var id in userIds.Distinct().Where(id => !existingIds.Contains(id)))
             {
-                await _unitOfWork.ChatGroupMembers.AddAsync(new ChatGroupMember { Id = Guid.NewGuid(), NhomId = groupId, ThanhVienId = id });
+                await _unitOfWork.ChatGroupMembers.AddAsync(new ChatGroupMember
+                {
+                    Id = Guid.NewGuid(),
+                    NhomId = groupId,
+                    ThanhVienId = id
+                });
             }
 
             var allUsers = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
             var addedNames = allUsers.Where(u => userIds.Contains(u.Id)).Select(u => u.HoVaTen).ToList();
+
             var notifyMsg = new ChatMessage
             {
                 Id = Guid.NewGuid(),
@@ -337,9 +390,56 @@ namespace AiImageGeneratorApi.Controllers
                 CreatedAt = DateTime.Now
             };
             await _unitOfWork.ChatMessages.AddAsync(notifyMsg);
-
             await _unitOfWork.CompleteAsync();
+
+            await NotifyGroup(notifyMsg);
             return Ok();
+        }
+
+        [HttpGet("group/members/{groupId}")]
+        public async Task<IActionResult> GetGroupMembers(Guid groupId, [FromQuery] string? keyword)
+        {
+            string sql = "EXEC sp_Chat_GetGroupMembers @GroupId, @CurrentUserId, @Keyword";
+
+            var members = await _unitOfWork.Connection.QueryAsync<dynamic>(
+                sql,
+                new
+                {
+                    GroupId = groupId,
+                    CurrentUserId = _currentUserId,
+                    Keyword = keyword
+                },
+                transaction: _unitOfWork.Transaction
+            );
+
+            return Ok(members);
+        }
+
+        [HttpGet("group/is-leader/{groupId}")]
+        public async Task<IActionResult> CheckIsGroupLeader(Guid groupId)
+        {
+            var group = await _unitOfWork.ChatGroups.GetByIdAsync(groupId);
+            if (group == null || group.IsDeleted)
+                return NotFound("Nhóm không tồn tại.");
+
+            bool isLeader = group.TruongNhomId == _currentUserId;
+            return Ok(isLeader);
+        }
+
+
+
+        [HttpGet("list-user-add-group/{groupId}")]
+        public async Task<IActionResult> GetAvailableUsersForGroup(Guid groupId, [FromQuery] string? keyword)
+        {
+            string sql = "EXEC sp_Chat_GetUsersNotInGroup @GroupId, @CurrentUserId, @Keyword";
+
+            var users = await _unitOfWork.Connection.QueryAsync<dynamic>(
+                sql,
+                new { GroupId = groupId, CurrentUserId = _currentUserId, Keyword = keyword },
+                transaction: _unitOfWork.Transaction
+            );
+
+            return Ok(users);
         }
 
         [HttpDelete("group/members/{groupId}")]
@@ -356,6 +456,7 @@ namespace AiImageGeneratorApi.Controllers
 
             var allUsers = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
             var removedNames = allUsers.Where(u => userIds.Contains(u.Id)).Select(u => u.HoVaTen).ToList();
+
             var notifyMsg = new ChatMessage
             {
                 Id = Guid.NewGuid(),
@@ -367,8 +468,9 @@ namespace AiImageGeneratorApi.Controllers
                 CreatedAt = DateTime.Now
             };
             await _unitOfWork.ChatMessages.AddAsync(notifyMsg);
-
             await _unitOfWork.CompleteAsync();
+
+            await NotifyGroup(notifyMsg);
             return Ok();
         }
 
@@ -557,6 +659,37 @@ namespace AiImageGeneratorApi.Controllers
             }
             await _unitOfWork.CompleteAsync();
             return Ok();
+        }
+
+        [HttpGet("images")]
+        public async Task<IActionResult> GetAllImages([FromQuery] bool isNhom, [FromQuery] Guid id)
+        {
+            var query = _dbContext.ChatMessages
+                .Where(m => !m.IsDeleted)
+                .Include(m => m.Files)
+                .AsQueryable();
+
+            if (isNhom)
+            {
+                query = query.Where(m => m.NhomId == id);
+            }
+            else
+            {
+                query = query.Where(m =>
+                    (m.NguoiGuiId == _currentUserId && m.NguoiNhanId == id) ||
+                    (m.NguoiGuiId == id && m.NguoiNhanId == _currentUserId));
+            }
+
+            var result = await query
+                .SelectMany(m => m.Files.Select(f => new
+                {
+                    f.FileUrl,
+                    m.CreatedAt
+                }))
+                .OrderByDescending(x => x.CreatedAt)
+                .ToListAsync();
+
+            return Ok(result);
         }
     }
 }

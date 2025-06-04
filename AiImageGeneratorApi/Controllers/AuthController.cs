@@ -96,10 +96,22 @@ namespace AiImageGeneratorApi.Controllers
 
             var token = _tokenService.GenerateToken(user);
 
-            return Ok(new AuthResponse { Token = token });
+            var userInfo = new UserRegisterDto
+            {
+                Id = user.Id,
+                HoVaTen = user.HoVaTen,
+                TenDangNhap = user.TenDangNhap,
+                Email = user.Email,
+                HinhAnh = user.HinhAnh,
+                Sdt = user.Sdt
+            };
+
+            return Ok(new AuthResponse
+            {
+                Token = token,
+                User = userInfo
+            });
         }
-
-
 
         private string MD5Hash(string input)
         {
