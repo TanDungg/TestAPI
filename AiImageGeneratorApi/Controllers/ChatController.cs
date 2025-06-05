@@ -683,6 +683,7 @@ namespace AiImageGeneratorApi.Controllers
             var result = await query
                 .SelectMany(m => m.Files.Select(f => new
                 {
+                    f.Id,
                     f.FileUrl,
                     m.CreatedAt
                 }))

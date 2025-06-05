@@ -14,6 +14,7 @@ namespace AiImageGeneratorApi.Models.DTOs
 
     public class ChatFileDto
     {
+        public Guid? Id { get; set; }
         public string FileUrl { get; set; }
     }
 
