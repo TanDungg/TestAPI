@@ -53,6 +53,24 @@ namespace AiImageGeneratorApi.Controllers
                 });
         }
 
+        private async Task CreateSystemMessageAsync(Guid groupId, string loaiThongBao, string tinNhan)
+        {
+            var systemMessage = new ChatMessage
+            {
+                Id = Guid.NewGuid(),
+                NguoiGuiId = _currentUserId,
+                NhomId = groupId,
+                TinNhan = tinNhan,
+                IsThongBao = true,
+                LoaiThongBao = loaiThongBao,
+                CreatedAt = DateTime.Now
+            };
+            await _unitOfWork.ChatMessages.AddAsync(systemMessage);
+            await _unitOfWork.CompleteAsync();
+
+            await NotifyGroup(systemMessage);
+        }
+
         [HttpPost("messages")]
         public async Task<IActionResult> SendMessage([FromBody] SendMessageDto dto)
         {
@@ -302,23 +320,8 @@ namespace AiImageGeneratorApi.Controllers
                 await _unitOfWork.ChatGroupMembers.AddAsync(m);
 
             var currentUser = await _currentUserInfo.Value;
-            var systemMessage = new ChatMessage
-            {
-                Id = Guid.NewGuid(),
-                NguoiGuiId = _currentUserId,
-                NhomId = group.Id,
-                TinNhan = $"{currentUser?.HoVaTen ?? "Một thành viên"} đã tạo nhóm.",
-                IsThongBao = true,
-                LoaiThongBao = "CreateGroup",
-                CreatedAt = DateTime.Now
-            };
-            await _unitOfWork.ChatMessages.AddAsync(systemMessage);
-            await _unitOfWork.CompleteAsync();
+            await CreateSystemMessageAsync(group.Id, "CreateGroup", $"{currentUser.HoVaTen} đã tạo nhóm.");
 
-            // Gửi thông báo cho nhóm mới
-            await NotifyGroup(systemMessage);
-
-            // Gửi event tạo nhóm cho từng thành viên
             foreach (var uid in members.Select(x => x.ThanhVienId))
             {
                 await _hubContext.Clients.User(uid.ToString()).SendAsync("NewGroupCreated", new
@@ -340,20 +343,9 @@ namespace AiImageGeneratorApi.Controllers
             group.TenNhom = dto.TenNhom;
             _unitOfWork.ChatGroups.Update(group);
 
-            var notifyMsg = new ChatMessage
-            {
-                Id = Guid.NewGuid(),
-                NguoiGuiId = _currentUserId,
-                NhomId = groupId,
-                TinNhan = $"Nhóm đã đổi tên thành \"{dto.TenNhom}\".",
-                IsThongBao = true,
-                LoaiThongBao = "RenameGroup",
-                CreatedAt = DateTime.Now
-            };
-            await _unitOfWork.ChatMessages.AddAsync(notifyMsg);
-            await _unitOfWork.CompleteAsync();
+            var currentUser = await _currentUserInfo.Value;
+            await CreateSystemMessageAsync(groupId, "RenameGroup", $"{currentUser.HoVaTen} đã đổi tên nhóm thành \"{dto.TenNhom}\".");
 
-            await NotifyGroup(notifyMsg);
             return Ok();
         }
 
@@ -376,23 +368,12 @@ namespace AiImageGeneratorApi.Controllers
                 });
             }
 
+            var currentUser = await _currentUserInfo.Value;
             var allUsers = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
             var addedNames = allUsers.Where(u => userIds.Contains(u.Id)).Select(u => u.HoVaTen).ToList();
 
-            var notifyMsg = new ChatMessage
-            {
-                Id = Guid.NewGuid(),
-                NguoiGuiId = _currentUserId,
-                NhomId = groupId,
-                TinNhan = $"{string.Join(", ", addedNames)} đã được thêm vào nhóm.",
-                IsThongBao = true,
-                LoaiThongBao = "AddMembers",
-                CreatedAt = DateTime.Now
-            };
-            await _unitOfWork.ChatMessages.AddAsync(notifyMsg);
-            await _unitOfWork.CompleteAsync();
+            await CreateSystemMessageAsync(groupId, "AddMembers", $"{string.Join(", ", addedNames)} được {currentUser.HoVaTen} thêm vào nhóm.");
 
-            await NotifyGroup(notifyMsg);
             return Ok();
         }
 
@@ -454,23 +435,13 @@ namespace AiImageGeneratorApi.Controllers
                 _unitOfWork.ChatGroupMembers.Remove(m);
             }
 
+            var currentUser = await _currentUserInfo.Value;
             var allUsers = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
             var removedNames = allUsers.Where(u => userIds.Contains(u.Id)).Select(u => u.HoVaTen).ToList();
 
-            var notifyMsg = new ChatMessage
-            {
-                Id = Guid.NewGuid(),
-                NguoiGuiId = _currentUserId,
-                NhomId = groupId,
-                TinNhan = $"{string.Join(", ", removedNames)} đã bị xoá khỏi nhóm.",
-                IsThongBao = true,
-                LoaiThongBao = "RemovedMembers",
-                CreatedAt = DateTime.Now
-            };
-            await _unitOfWork.ChatMessages.AddAsync(notifyMsg);
-            await _unitOfWork.CompleteAsync();
+            await CreateSystemMessageAsync(groupId, "RemovedMembers", $"{string.Join(", ", removedNames)} được {currentUser.HoVaTen} xóa khỏi nhóm.");
 
-            await NotifyGroup(notifyMsg);
+            await _unitOfWork.CompleteAsync();
             return Ok();
         }
 
@@ -681,16 +652,54 @@ namespace AiImageGeneratorApi.Controllers
             }
 
             var result = await query
-                .SelectMany(m => m.Files.Select(f => new
-                {
-                    f.Id,
-                    f.FileUrl,
-                    m.CreatedAt
-                }))
+                .SelectMany(m => m.Files
+                    .Where(f => f.FileUrl.EndsWith(".jpg") ||
+                                f.FileUrl.EndsWith(".jpeg") ||
+                                f.FileUrl.EndsWith(".png") ||
+                                f.FileUrl.EndsWith(".gif") ||
+                                f.FileUrl.EndsWith(".webp"))
+                    .Select(f => new
+                    {
+                        f.Id,
+                        f.FileUrl,
+                        m.CreatedAt
+                    }))
                 .OrderByDescending(x => x.CreatedAt)
                 .ToListAsync();
 
             return Ok(result);
         }
+
+        [HttpGet("group/info/{groupId}")]
+        public async Task<IActionResult> GetGroupFullInfo(Guid groupId)
+        {
+            string sql = "EXEC sp_Chat_GetGroupFullInfo @GroupId, @CurrentUserId";
+
+            try
+            {
+                using var multi = await _unitOfWork.Connection.QueryMultipleAsync(
+                    sql,
+                    new { GroupId = groupId, CurrentUserId = _currentUserId },
+                    transaction: _unitOfWork.Transaction);
+
+                var info = await multi.ReadFirstOrDefaultAsync();           // 1. Thông tin nhóm
+                var image_Videos = (await multi.ReadAsync()).ToList();             // 2. Ảnh/video
+                var file = (await multi.ReadAsync()).ToList();          // 3. Link từ file
+                var link = (await multi.ReadAsync()).ToList();       // 4. Link trong tin nhắn
+
+                return Ok(new
+                {
+                    info,
+                    image_Videos,
+                    file,
+                    link
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
     }
 }

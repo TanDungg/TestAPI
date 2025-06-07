@@ -28,10 +28,14 @@ namespace AiImageGeneratorApi.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAllUser()
+        public async Task<IActionResult> GetAllUser([FromQuery] string? keyword)
         {
             var data = await _unitOfWork.Users.GetAllSelectAsync(
-                x => !x.IsDeleted,
+                x => !x.IsDeleted &&
+                    (string.IsNullOrEmpty(keyword) ||
+                     x.HoVaTen.Contains(keyword) ||
+                     x.Email.Contains(keyword) ||
+                     x.Sdt.Contains(keyword)),
                 x => new
                 {
                     x.Id,
@@ -44,6 +48,7 @@ namespace AiImageGeneratorApi.Controllers
 
             return Ok(data);
         }
+
 
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(Guid id)
