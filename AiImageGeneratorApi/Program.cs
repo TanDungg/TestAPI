@@ -9,6 +9,7 @@ using AiImageGeneratorApi.Interfaces;
 using AiImageGeneratorApi.Hubs;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.SignalR;
+using AiImageGeneratorApi.Helpers;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -21,6 +22,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<HuggingFaceService>(); // Đăng ký HuggingFaceService
 builder.Services.AddHttpClient(); // Kích hoạt IHttpClientFactory
+builder.Services.AddScoped<IChatGroupHelper, ChatGroupHelper>();
 
 // ======= Xác thực: JWT Bearer ==========
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
