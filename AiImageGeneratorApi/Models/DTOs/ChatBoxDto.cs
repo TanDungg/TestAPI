@@ -54,7 +54,7 @@ namespace AiImageGeneratorApi.Models.DTOs
         public Guid NguoiGuiId { get; set; }
         public string? TenNguoiGui { get; set; }
         public string? HinhAnh { get; set; }
-        public string TinNhan { get; set; }
+        public string? TinNhan { get; set; }
         public Guid? NguoiNhanId { get; set; }
         public string? TenNguoiNhan { get; set; }
         public string ThoiGianGui { get; set; }
@@ -62,6 +62,9 @@ namespace AiImageGeneratorApi.Models.DTOs
         public bool IsRead { get; set; }
         public bool IsThongBao { get; set; }
         public string? LoaiThongBao { get; set; }
+        public string EncryptedMessage { get; set; }
+        public string EncryptedKey { get; set; }
+        public string IV { get; set; }               
         public List<ChatFileDto> List_Files { get; set; }
     }
 

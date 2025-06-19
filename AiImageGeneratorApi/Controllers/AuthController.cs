@@ -23,6 +23,18 @@ namespace AiImageGeneratorApi.Controllers
             _tokenService = tokenService;
         }
 
+        public static class RsaKeyGenerator
+        {
+            public static (string PublicKey, string PrivateKey) GenerateKeyPair()
+            {
+                using var rsa = RSA.Create(2048);
+                return (
+                    Convert.ToBase64String(rsa.ExportSubjectPublicKeyInfo()),
+                    Convert.ToBase64String(rsa.ExportPkcs8PrivateKey())
+                );
+            }
+        }
+
         [HttpPost("register")]
         public IActionResult Register([FromBody] UserRegisterDto auth)
         {
@@ -44,18 +56,25 @@ namespace AiImageGeneratorApi.Controllers
 
             try
             {
+                var userId = Guid.NewGuid(); // ✅ Tạo thủ công
+
                 var user = new User
                 {
+                    Id = userId,
                     TenDangNhap = auth.TenDangNhap,
                     MatKhau = MD5Hash(auth.MatKhau),
                     HoVaTen = auth.HoVaTen,
-                    DiaChi = auth.DiaChi,
-                    Email = auth.Email,
-                    Sdt = auth.Sdt,
+                    DiaChi = auth?.DiaChi,
+                    Email = auth?.Email,
+                    Sdt = auth?.Sdt,
                     HinhAnh = auth.HinhAnh,
                     CreatedAt = DateTime.Now,
-                    CreatedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier))
+                    CreatedBy = userId // ✅ an toàn
                 };
+
+                var (publicKey, privateKey) = RsaKeyGenerator.GenerateKeyPair();
+                user.PublicKey = publicKey;
+                user.PrivateKey = privateKey;
 
                 _context.Users.Add(user);
                 _context.SaveChanges();
@@ -64,7 +83,7 @@ namespace AiImageGeneratorApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ex.Message);
+                return StatusCode(500, ex.InnerException?.Message ?? ex.Message);
             }
         }
 

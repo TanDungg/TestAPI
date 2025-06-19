@@ -13,9 +13,9 @@ namespace AiImageGeneratorApi.Models.DTOs
 
         [Required(ErrorMessage = "Họ và tên là bắt buộc")]
         public string HoVaTen { get; set; }
-        public string DiaChi { get; set; }
-        public string Email { get; set; }
-        public string Sdt { get; set; }
+        public string? DiaChi { get; set; }
+        public string? Email { get; set; }
+        public string? Sdt { get; set; }
 
         [Required(ErrorMessage = "Hình ảnh là bắt buộc")]
         public string HinhAnh { get; set; }
@@ -24,9 +24,9 @@ namespace AiImageGeneratorApi.Models.DTOs
     {
         [Required(ErrorMessage = "Họ và tên là bắt buộc")]
         public string HoVaTen { get; set; }
-        public string DiaChi { get; set; }
-        public string Email { get; set; }
-        public string Sdt { get; set; }
+        public string? DiaChi { get; set; }
+        public string? Email { get; set; }
+        public string? Sdt { get; set; }
 
         [Required(ErrorMessage = "Hình ảnh là bắt buộc")]
         public string HinhAnh { get; set; }

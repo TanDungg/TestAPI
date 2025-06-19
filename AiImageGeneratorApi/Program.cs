@@ -150,6 +150,11 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = string.Empty;
     c.DisplayRequestDuration();
 });
+var uploadPath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
+if (!Directory.Exists(uploadPath))
+{
+    Directory.CreateDirectory(uploadPath);
+}
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(

@@ -10,6 +10,7 @@ using Dapper;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using System.Text.RegularExpressions;
+using static AiImageGeneratorApi.Controllers.AuthController;
 
 namespace AiImageGeneratorApi.Controllers
 {
@@ -79,6 +80,23 @@ namespace AiImageGeneratorApi.Controllers
                 return NotFound("Không tìm thấy thông tin người dùng.");
 
             return Ok(result);
+        }
+
+        [HttpPost("generate-keys")]
+        public async Task<IActionResult> GenerateRsaKeysForAllUsers()
+        {
+            var users = await _unitOfWork.Users.FindAsync(u => string.IsNullOrEmpty(u.PublicKey));
+
+            foreach (var user in users)
+            {
+                var (pub, priv) = RsaKeyGenerator.GenerateKeyPair();
+                user.PublicKey = pub;
+                user.PrivateKey = priv;
+                _unitOfWork.Users.Update(user);
+            }
+
+            await _unitOfWork.CompleteAsync();
+            return Ok(new { Count = users.Count() });
         }
 
 

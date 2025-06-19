@@ -14,14 +14,21 @@ namespace AiImageGeneratorApi.Models.Entities
     public class ChatMessage : BaseEntity
     {
         public Guid NguoiGuiId { get; set; }
-        public string TinNhan { get; set; }
+        public User NguoiGui { get; set; }
+        public string? TinNhan { get; set; }
         public Guid? NhomId { get; set; } = null;
         public Guid? NguoiNhanId { get; set; } = null;
+        public User NguoiNhan { get; set; }
         public bool IsRead { get; set; } = false;
         public bool IsThongBao { get; set; } = false;
         public string? LoaiThongBao { get; set; } = null;
-        public ICollection<ChatMessageFile> Files { get; set; } = new List<ChatMessageFile>();
+        public string? EncryptedMessage { get; set; }
+        public string? EncryptedKeyForSender { get; set; }
+        public string? EncryptedKeyForReceiver { get; set; }
+        public string? IV { get; set; }
         public ICollection<ChatMessageRead> Reads { get; set; }
+        public ICollection<ChatMessageFile> Files { get; set; } = new List<ChatMessageFile>();
+        public ICollection<ChatMessageKey> MessageKeys { get; set; } = new List<ChatMessageKey>();
     }
 
     public class ChatGroup : BaseEntity
@@ -48,4 +55,13 @@ namespace AiImageGeneratorApi.Models.Entities
         public User User { get; set; }
     }
 
+    public class ChatMessageKey
+    {
+        public Guid Id { get; set; }
+        public Guid TinNhanId { get; set; }
+        public Guid ThanhVienId { get; set; }
+        public string EncryptedKey { get; set; }
+        public ChatMessage TinNhan { get; set; }
+        public User ThanhVien { get; set; }
+    }
 }

@@ -50,7 +50,23 @@ namespace AiImageGeneratorApi.Migrations
 
             modelBuilder.Entity("AiImageGeneratorApi.Models.DTOs.ChatMessageDto", b =>
                 {
+                    b.Property<string>("EncryptedKeyForReceiver")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EncryptedKeyForSender")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EncryptedMessage")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("HinhAnh")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IV")
+                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("Id")
@@ -85,7 +101,6 @@ namespace AiImageGeneratorApi.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("TinNhan")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.ToTable("ChatMessageDto");
@@ -226,6 +241,18 @@ namespace AiImageGeneratorApi.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("EncryptedKeyForReceiver")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EncryptedKeyForSender")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EncryptedMessage")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IV")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -248,7 +275,6 @@ namespace AiImageGeneratorApi.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("TinNhan")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -258,6 +284,10 @@ namespace AiImageGeneratorApi.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("NguoiGuiId");
+
+                    b.HasIndex("NguoiNhanId");
 
                     b.ToTable("ChatMessages");
                 });
@@ -301,6 +331,31 @@ namespace AiImageGeneratorApi.Migrations
                     b.HasIndex("ChatMessageId");
 
                     b.ToTable("ChatMessageFile");
+                });
+
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageKey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EncryptedKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("ThanhVienId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TinNhanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ThanhVienId");
+
+                    b.HasIndex("TinNhanId");
+
+                    b.ToTable("ChatMessageKey");
                 });
 
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageRead", b =>
@@ -544,11 +599,9 @@ namespace AiImageGeneratorApi.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("DiaChi")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Email")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("HinhAnh")
@@ -566,8 +619,15 @@ namespace AiImageGeneratorApi.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("Sdt")
+                    b.Property<string>("PrivateKey")
                         .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Sdt")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("TenDangNhap")
@@ -627,6 +687,24 @@ namespace AiImageGeneratorApi.Migrations
                     b.ToTable("UserRoles");
                 });
 
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessage", b =>
+                {
+                    b.HasOne("AiImageGeneratorApi.Models.Entities.User", "NguoiGui")
+                        .WithMany("MessagesSent")
+                        .HasForeignKey("NguoiGuiId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiImageGeneratorApi.Models.Entities.User", "NguoiNhan")
+                        .WithMany("MessagesReceived")
+                        .HasForeignKey("NguoiNhanId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("NguoiGui");
+
+                    b.Navigation("NguoiNhan");
+                });
+
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageFile", b =>
                 {
                     b.HasOne("AiImageGeneratorApi.Models.Entities.ChatMessage", "ChatMessage")
@@ -636,6 +714,25 @@ namespace AiImageGeneratorApi.Migrations
                         .IsRequired();
 
                     b.Navigation("ChatMessage");
+                });
+
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageKey", b =>
+                {
+                    b.HasOne("AiImageGeneratorApi.Models.Entities.User", "ThanhVien")
+                        .WithMany()
+                        .HasForeignKey("ThanhVienId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AiImageGeneratorApi.Models.Entities.ChatMessage", "TinNhan")
+                        .WithMany("MessageKeys")
+                        .HasForeignKey("TinNhanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ThanhVien");
+
+                    b.Navigation("TinNhan");
                 });
 
             modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.ChatMessageRead", b =>
@@ -719,6 +816,8 @@ namespace AiImageGeneratorApi.Migrations
                 {
                     b.Navigation("Files");
 
+                    b.Navigation("MessageKeys");
+
                     b.Navigation("Reads");
                 });
 
@@ -732,6 +831,13 @@ namespace AiImageGeneratorApi.Migrations
                     b.Navigation("RoleMenus");
 
                     b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("AiImageGeneratorApi.Models.Entities.User", b =>
+                {
+                    b.Navigation("MessagesReceived");
+
+                    b.Navigation("MessagesSent");
                 });
 #pragma warning restore 612, 618
         }

@@ -57,8 +57,6 @@ namespace AiImageGeneratorApi.Controllers
                 TenNhom = dto.TenNhom,
                 HinhAnh = dto.HinhAnh,
                 TruongNhomId = _currentUserId,
-                CreatedAt = DateTime.Now,
-                CreatedBy = _currentUserId,
             };
             await _unitOfWork.ChatGroups.AddAsync(group);
 
@@ -137,6 +135,7 @@ namespace AiImageGeneratorApi.Controllers
 
             await _chatGroupHelper.CreateSystemMessageAsync(groupId, "AddMembers", $"{string.Join(", ", addedNames)} được {currentUser.HoVaTen} thêm vào nhóm.", _currentUserId);
 
+            await _unitOfWork.CompleteAsync();
             return Ok();
         }
 
@@ -209,10 +208,6 @@ namespace AiImageGeneratorApi.Controllers
 
             if (group.TruongNhomId != _currentUserId)
                 return Forbid();
-
-            group.IsDeleted = true;
-            group.DeletedAt = DateTime.Now;
-            group.DeletedBy = _currentUserId;
 
             _unitOfWork.ChatGroups.Update(group);
             await _unitOfWork.CompleteAsync();
