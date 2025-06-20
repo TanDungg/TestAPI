@@ -20,6 +20,7 @@ namespace AiImageGeneratorApi.Services
         private IGenericRepository<ChatGroup> _chatGroups;
         private IGenericRepository<ChatGroupMember> _chatGroupMembers;
         private IGenericRepository<ChatMessageRead> _chatMessageReads;
+        private IGenericRepository<ChatMessageKey> _chatMessageKeys;
 
         public ApplicationDbContext DbContext => _context;
         public UnitOfWork(ApplicationDbContext context)
@@ -40,6 +41,7 @@ namespace AiImageGeneratorApi.Services
         public IGenericRepository<ChatGroup> ChatGroups => _chatGroups ??= new GenericRepository<ChatGroup>(_context);
         public IGenericRepository<ChatGroupMember> ChatGroupMembers => _chatGroupMembers ??= new GenericRepository<ChatGroupMember>(_context);
         public IGenericRepository<ChatMessageRead> ChatMessageReads => _chatMessageReads ??= new GenericRepository<ChatMessageRead>(_context);
+        public IGenericRepository<ChatMessageKey> ChatMessageKeys => _chatMessageKeys ??= new GenericRepository<ChatMessageKey>(_context);
 
         public async Task<int> CompleteAsync()
         {

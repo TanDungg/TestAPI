@@ -35,6 +35,11 @@ namespace AiImageGeneratorApi.Data
             modelBuilder.Entity<ChatMessageDto>().HasNoKey();
             modelBuilder.Entity<ChatInfoMessage>().HasNoKey();
             modelBuilder.Entity<ListChatDto>().HasNoKey();
+            modelBuilder.Entity<ChatMessage>()
+                .HasMany(m => m.MessageKeys)
+                .WithOne(k => k.TinNhan)
+                .HasForeignKey(k => k.TinNhanId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Cấu hình ChatMessageRead
             modelBuilder.Entity<ChatMessageRead>(entity =>

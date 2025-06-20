@@ -55,7 +55,7 @@ namespace AiImageGeneratorApi.Models.Entities
         public User User { get; set; }
     }
 
-    public class ChatMessageKey
+    public class ChatMessageKey : BaseEntity
     {
         public Guid Id { get; set; }
         public Guid TinNhanId { get; set; }

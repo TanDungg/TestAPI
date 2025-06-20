@@ -54,42 +54,17 @@ namespace AiImageGeneratorApi.Controllers
             if (string.IsNullOrWhiteSpace(dto.TinNhan) && (dto.List_Files == null || !dto.List_Files.Any()))
                 return BadRequest("Phải có nội dung hoặc file đính kèm");
 
-            string recipientPublicKey;
-
-            if (dto.NguoiNhanId != null)
-            {
-                var receiver = await _unitOfWork.Users.GetByIdAsync(dto.NguoiNhanId.Value);
-                if (receiver == null || string.IsNullOrWhiteSpace(receiver.PublicKey))
-                    return BadRequest("Người nhận không tồn tại hoặc thiếu khóa mã hóa.");
-                recipientPublicKey = receiver.PublicKey;
-            }
-            else if (dto.NhomId != null)
-            {
-                var group = await _unitOfWork.ChatGroups.GetByIdAsync(dto.NhomId.Value);
-                if (group == null) return BadRequest("Nhóm không tồn tại.");
-                var groupOwner = await _unitOfWork.Users.GetByIdAsync(group.TruongNhomId);
-                if (groupOwner == null || string.IsNullOrWhiteSpace(groupOwner.PublicKey))
-                    return BadRequest("Trưởng nhóm thiếu khóa mã hóa.");
-                recipientPublicKey = groupOwner.PublicKey;
-            }
-            else
-            {
-                return BadRequest("Thiếu thông tin người nhận hoặc nhóm.");
-            }
-
             var sender = await _unitOfWork.Users.GetByIdAsync(_currentUserId);
             if (string.IsNullOrWhiteSpace(sender.PublicKey))
                 return StatusCode(500, "Người gửi chưa có khóa công khai");
 
-            var encrypted = HybridEncryptionHelper.EncryptForBoth(dto.TinNhan, sender.PublicKey, recipientPublicKey);
+            var encrypted = HybridEncryptionHelper.Encrypt(dto.TinNhan);
 
             var message = new ChatMessage
             {
                 Id = Guid.NewGuid(),
                 NguoiGuiId = _currentUserId,
                 EncryptedMessage = encrypted.EncryptedMessage,
-                EncryptedKeyForSender = encrypted.EncryptedKeyForSender,
-                EncryptedKeyForReceiver = encrypted.EncryptedKeyForReceiver,
                 IV = encrypted.IV,
                 CreatedAt = DateTime.Now,
                 NguoiNhanId = dto.NguoiNhanId,
@@ -111,6 +86,42 @@ namespace AiImageGeneratorApi.Controllers
                 }
             }
 
+            // Mã hóa khóa AES cho người nhận hoặc từng thành viên nhóm
+            var encryptedKeys = new List<ChatMessageKey>();
+
+            if (dto.NguoiNhanId != null) // Chat 1-1
+            {
+                var receiver = await _unitOfWork.Users.GetByIdAsync(dto.NguoiNhanId.Value);
+                if (receiver == null || string.IsNullOrWhiteSpace(receiver.PublicKey))
+                    return BadRequest("Người nhận không tồn tại hoặc thiếu khóa công khai");
+
+                var keyForSender = HybridEncryptionHelper.EncryptAESKeyForUser(encrypted.AESKey, sender.PublicKey);
+                var keyForReceiver = HybridEncryptionHelper.EncryptAESKeyForUser(encrypted.AESKey, receiver.PublicKey);
+
+                encryptedKeys.Add(new ChatMessageKey { Id = Guid.NewGuid(), TinNhanId = message.Id, ThanhVienId = sender.Id, EncryptedKey = keyForSender });
+                encryptedKeys.Add(new ChatMessageKey { Id = Guid.NewGuid(), TinNhanId = message.Id, ThanhVienId = receiver.Id, EncryptedKey = keyForReceiver });
+            }
+            else if (dto.NhomId != null) // Chat nhóm
+            {
+                var members = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.NhomId == dto.NhomId.Value);
+                var users = await _unitOfWork.Users.FindAsync(u => members.Select(m => m.ThanhVienId).Contains(u.Id));
+                foreach (var user in users)
+                {
+                    if (string.IsNullOrWhiteSpace(user.PublicKey)) continue;
+
+                    var key = HybridEncryptionHelper.EncryptAESKeyForUser(encrypted.AESKey, user.PublicKey);
+                    encryptedKeys.Add(new ChatMessageKey
+                    {
+                        Id = Guid.NewGuid(),
+                        TinNhanId = message.Id,
+                        ThanhVienId = user.Id,
+                        EncryptedKey = key
+                    });
+                }
+            }
+
+            message.MessageKeys = encryptedKeys;
+
             await _unitOfWork.ChatMessages.AddAsync(message);
             await _unitOfWork.CompleteAsync();
 
@@ -119,6 +130,8 @@ namespace AiImageGeneratorApi.Controllers
             var messageDto = new ChatMessageDto
             {
                 Id = message.Id,
+                IsNhom = message.NhomId != null,
+                NhomId = message.NhomId,
                 NguoiGuiId = message.NguoiGuiId,
                 TenNguoiGui = sender.HoVaTen,
                 HinhAnh = sender.HinhAnh,
@@ -143,7 +156,6 @@ namespace AiImageGeneratorApi.Controllers
             return Ok(messageDto);
         }
 
-
         [HttpGet("list-message")]
         public async Task<IActionResult> GetListMessage()
         {
@@ -154,52 +166,53 @@ namespace AiImageGeneratorApi.Controllers
             var messages = await _unitOfWork.ChatMessages
                 .FindAsync(m => (m.NguoiGuiId == userId || m.NguoiNhanId == userId) && m.NhomId == null && !m.IsDeleted);
 
-            var userMessages = messages
-                .GroupBy(m => m.NguoiGuiId == userId ? m.NguoiNhanId : m.NguoiGuiId)
-                .Select(group =>
-                {
-                    var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
-                    string decrypted = "[Không thể giải mã]";
-                    try
-                    {
-                        if (lastMsg.IsThongBao)
-                        {
-                            decrypted = lastMsg.TinNhan ?? "[Thông báo]";
-                        }
-                        else if (!string.IsNullOrEmpty(lastMsg.EncryptedMessage) &&
-                                 !string.IsNullOrEmpty(lastMsg.EncryptedKeyForSender) &&
-                                 !string.IsNullOrEmpty(lastMsg.EncryptedKeyForReceiver) &&
-                                 !string.IsNullOrEmpty(lastMsg.IV))
-                        {
-                            var aesKeyEncrypted = (lastMsg.NguoiGuiId == userId)
-                                ? lastMsg.EncryptedKeyForSender
-                                : lastMsg.EncryptedKeyForReceiver;
+            var userMessages = new List<ListChatDto>();
 
+            foreach (var group in messages.GroupBy(m => m.NguoiGuiId == userId ? m.NguoiNhanId : m.NguoiGuiId))
+            {
+                var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
+                string decrypted = "[Không thể giải mã]";
+
+                try
+                {
+                    if (lastMsg.IsThongBao)
+                    {
+                        decrypted = lastMsg.TinNhan ?? "[Thông báo]";
+                    }
+                    else if (!string.IsNullOrEmpty(lastMsg.EncryptedMessage) &&
+                             !string.IsNullOrEmpty(lastMsg.IV))
+                    {
+                        var keyEntry = await _unitOfWork.ChatMessageKeys
+                            .FindAsync(k => k.TinNhanId == lastMsg.Id && k.ThanhVienId == userId);
+                        var key = keyEntry.FirstOrDefault()?.EncryptedKey;
+
+                        if (!string.IsNullOrEmpty(key))
+                        {
                             decrypted = HybridEncryptionHelper.Decrypt(
                                 lastMsg.EncryptedMessage,
-                                aesKeyEncrypted,
+                                key,
                                 lastMsg.IV,
                                 currentUser.PrivateKey
                             );
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Lỗi giải mã tin nhắn ID: {MessageId}", lastMsg.Id);
-                        decrypted = "[Không thể giải mã]";
-                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Lỗi giải mã tin nhắn ID: {MessageId}", lastMsg.Id);
+                }
 
-                    return new ListChatDto
-                    {
-                        IsNhom = false,
-                        Id = group.Key ?? Guid.Empty,
-                        TinNhanMoiNhat = decrypted,
-                        ThoiGianNhan = lastMsg.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
-                        SoLuongChuaXem = group.Count(m => m.NguoiNhanId == userId && !m.IsRead),
-                        IsGui = lastMsg.NguoiGuiId == userId,
-                        IsThongBao = lastMsg.IsThongBao
-                    };
-                }).ToList();
+                userMessages.Add(new ListChatDto
+                {
+                    IsNhom = false,
+                    Id = group.Key ?? Guid.Empty,
+                    TinNhanMoiNhat = decrypted,
+                    ThoiGianNhan = lastMsg.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
+                    SoLuongChuaXem = group.Count(m => m.NguoiNhanId == userId && !m.IsRead),
+                    IsGui = lastMsg.NguoiGuiId == userId,
+                    IsThongBao = lastMsg.IsThongBao
+                });
+            }
 
             // --- Tin nhắn nhóm ---
             var joinedGroups = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.ThanhVienId == userId);
@@ -215,52 +228,53 @@ namespace AiImageGeneratorApi.Controllers
 
             var readMessageIdSet = new HashSet<Guid>(groupReads.Select(r => r.TinNhanId));
 
-            var groupData = groupMessages
-                .GroupBy(m => m.NhomId.Value)
-                .Select(group =>
-                {
-                    var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
-                    string decrypted = "[Không thể giải mã]";
-                    try
-                    {
-                        if (lastMsg.IsThongBao)
-                        {
-                            decrypted = lastMsg.TinNhan ?? "[Thông báo]";
-                        }
-                        else if (!string.IsNullOrEmpty(lastMsg.EncryptedMessage) &&
-                                 !string.IsNullOrEmpty(lastMsg.EncryptedKeyForSender) &&
-                                 !string.IsNullOrEmpty(lastMsg.EncryptedKeyForReceiver) &&
-                                 !string.IsNullOrEmpty(lastMsg.IV))
-                        {
-                            var aesKeyEncrypted = (lastMsg.NguoiGuiId == userId)
-                                ? lastMsg.EncryptedKeyForSender
-                                : lastMsg.EncryptedKeyForReceiver;
+            var groupData = new List<ListChatDto>();
 
+            foreach (var group in groupMessages.GroupBy(m => m.NhomId.Value))
+            {
+                var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
+                string decrypted = "[Không thể giải mã]";
+
+                try
+                {
+                    if (lastMsg.IsThongBao)
+                    {
+                        decrypted = lastMsg.TinNhan ?? "[Thông báo]";
+                    }
+                    else if (!string.IsNullOrEmpty(lastMsg.EncryptedMessage) &&
+                             !string.IsNullOrEmpty(lastMsg.IV))
+                    {
+                        var keyEntry = await _unitOfWork.ChatMessageKeys
+                            .FindAsync(k => k.TinNhanId == lastMsg.Id && k.ThanhVienId == userId);
+                        var key = keyEntry.FirstOrDefault()?.EncryptedKey;
+
+                        if (!string.IsNullOrEmpty(key))
+                        {
                             decrypted = HybridEncryptionHelper.Decrypt(
                                 lastMsg.EncryptedMessage,
-                                aesKeyEncrypted,
+                                key,
                                 lastMsg.IV,
                                 currentUser.PrivateKey
                             );
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Lỗi giải mã tin nhắn ID: {MessageId}", lastMsg.Id);
-                        decrypted = "[Không thể giải mã]";
-                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Lỗi giải mã tin nhắn nhóm ID: {MessageId}", lastMsg.Id);
+                }
 
-                    return new ListChatDto
-                    {
-                        IsNhom = true,
-                        Id = group.Key,
-                        TinNhanMoiNhat = decrypted,
-                        ThoiGianNhan = lastMsg.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
-                        SoLuongChuaXem = group.Count(m => m.NguoiGuiId != userId && !readMessageIdSet.Contains(m.Id)),
-                        IsGui = lastMsg.NguoiGuiId == userId,
-                        IsThongBao = lastMsg.IsThongBao
-                    };
-                }).ToList();
+                groupData.Add(new ListChatDto
+                {
+                    IsNhom = true,
+                    Id = group.Key,
+                    TinNhanMoiNhat = decrypted,
+                    ThoiGianNhan = lastMsg.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
+                    SoLuongChuaXem = group.Count(m => m.NguoiGuiId != userId && !readMessageIdSet.Contains(m.Id)),
+                    IsGui = lastMsg.NguoiGuiId == userId,
+                    IsThongBao = lastMsg.IsThongBao
+                });
+            }
 
             // --- Mapping tên + ảnh ---
             var userIds = userMessages.Select(x => x.Id).Distinct().ToList();
@@ -300,57 +314,53 @@ namespace AiImageGeneratorApi.Controllers
         [HttpGet("messages")]
         public async Task<IActionResult> GetChatMessages([FromQuery] bool isNhom, [FromQuery] Guid id)
         {
+            var currentUser = await _currentUserInfo.Value;
+
             if (isNhom)
             {
                 var isMember = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.NhomId == id && m.ThanhVienId == _currentUserId);
-                if (isMember == null || !isMember.Any()) return Forbid();
+                if (!isMember.Any()) return Forbid();
             }
 
             string sql = "EXEC sp_GetChatInfoMessages {0}, {1}, {2}";
             var result = await _unitOfWork.ChatMessages.ExecuteStoredProcedureAsync<ChatInfoMessage>(sql, isNhom, id, _currentUserId);
-
-            if (result == null || result.Count == 0)
-                return NotFound();
+            if (result == null || result.Count == 0) return NotFound();
 
             var raw = result.First();
-            var currentUser = await _currentUserInfo.Value;
+            var parsedNgays = JsonConvert.DeserializeObject<List<ChatMessageGroupedByDateDto>>(raw.List_Ngays ?? "[]");
 
-            var parsedNgays = new List<ChatMessageGroupedByDateDto>();
-            if (!string.IsNullOrWhiteSpace(raw.List_Ngays))
+            foreach (var group in parsedNgays)
             {
-                parsedNgays = JsonConvert.DeserializeObject<List<ChatMessageGroupedByDateDto>>(raw.List_Ngays);
-
-                foreach (var ngay in parsedNgays)
+                foreach (var msg in group.List_Messages)
                 {
-                    foreach (var msg in ngay.List_Messages)
+                    try
                     {
-                        try
+                        if (msg.IsThongBao)
                         {
-                            if (msg.IsThongBao)
-                            {
-                                msg.TinNhan = msg.TinNhan ?? "[Thông báo]";
-                            }
-                            else if (!string.IsNullOrWhiteSpace(msg.EncryptedMessage) &&
-                                     !string.IsNullOrWhiteSpace(msg.EncryptedKey) &&
-                                     !string.IsNullOrWhiteSpace(msg.IV) &&
-                                     !string.IsNullOrWhiteSpace(currentUser.PrivateKey))
-                            {
-                                msg.TinNhan = HybridEncryptionHelper.Decrypt(
-                                    msg.EncryptedMessage,
-                                    msg.EncryptedKey,
-                                    msg.IV,
-                                    currentUser.PrivateKey
-                                );
-                            }
-                            else
-                            {
-                                msg.TinNhan = "[Không thể giải mã]";
-                            }
+                            msg.TinNhan = msg.TinNhan ?? "[Thông báo]";
+                            continue;
                         }
-                        catch
+
+                        var keyRecordList = await _unitOfWork.ChatMessageKeys.FindAsync(k => k.TinNhanId == msg.Id && k.ThanhVienId == _currentUserId);
+                        var keyRecord = keyRecordList.FirstOrDefault();
+
+                        if (keyRecord != null && !string.IsNullOrWhiteSpace(keyRecord.EncryptedKey))
+                        {
+                            msg.TinNhan = HybridEncryptionHelper.Decrypt(
+                                msg.EncryptedMessage,
+                                keyRecord.EncryptedKey,
+                                msg.IV,
+                                currentUser.PrivateKey
+                            );
+                        }
+                        else
                         {
                             msg.TinNhan = "[Không thể giải mã]";
                         }
+                    }
+                    catch
+                    {
+                        msg.TinNhan = "[Không thể giải mã]";
                     }
                 }
             }

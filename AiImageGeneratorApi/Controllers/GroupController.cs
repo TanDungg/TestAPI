@@ -109,31 +109,56 @@ namespace AiImageGeneratorApi.Controllers
 
             return Ok();
         }
-
         [HttpPost("members/{groupId}")]
         public async Task<IActionResult> AddMembers(Guid groupId, [FromBody] List<Guid> userIds)
         {
             var group = await _unitOfWork.ChatGroups.GetByIdAsync(groupId);
-            if (group == null || group.TruongNhomId != _currentUserId) return Forbid();
+            if (group == null) return NotFound();
 
+            // Kiểm tra nếu người dùng hiện tại là thành viên của nhóm
+            var isCurrentUserMember = await _unitOfWork.ChatGroupMembers.FindAsync(m =>
+                m.NhomId == groupId && m.ThanhVienId == _currentUserId && (m.IsDeleted == null || m.IsDeleted == false));
+
+            if (!isCurrentUserMember.Any()) return Forbid();
+
+            // Lấy tất cả thành viên từng tham gia nhóm, kể cả đã bị xóa
             var existing = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.NhomId == groupId);
-            var existingIds = existing.Select(m => m.ThanhVienId).ToHashSet();
+            var existingDict = existing.ToDictionary(m => m.ThanhVienId, m => m);
 
-            foreach (var id in userIds.Distinct().Where(id => !existingIds.Contains(id)))
+            foreach (var id in userIds.Distinct())
             {
-                await _unitOfWork.ChatGroupMembers.AddAsync(new ChatGroupMember
+                if (existingDict.TryGetValue(id, out var existingMember))
                 {
-                    Id = Guid.NewGuid(),
-                    NhomId = groupId,
-                    ThanhVienId = id
-                });
+                    if (existingMember.IsDeleted == true)
+                    {
+                        // Khôi phục nếu bị xóa mềm
+                        existingMember.IsDeleted = false;
+                        existingMember.DeletedAt = null;
+                        // Nếu có cập nhật thời gian, bạn có thể cập nhật modified time ở đây
+                    }
+                    // Nếu đang là thành viên hợp lệ, bỏ qua
+                }
+                else
+                {
+                    // Thêm mới nếu chưa từng có
+                    await _unitOfWork.ChatGroupMembers.AddAsync(new ChatGroupMember
+                    {
+                        Id = Guid.NewGuid(),
+                        NhomId = groupId,
+                        ThanhVienId = id
+                    });
+                }
             }
 
             var currentUser = await _currentUserInfo.Value;
             var allUsers = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
             var addedNames = allUsers.Where(u => userIds.Contains(u.Id)).Select(u => u.HoVaTen).ToList();
 
-            await _chatGroupHelper.CreateSystemMessageAsync(groupId, "AddMembers", $"{string.Join(", ", addedNames)} được {currentUser.HoVaTen} thêm vào nhóm.", _currentUserId);
+            if (addedNames.Any())
+            {
+                await _chatGroupHelper.CreateSystemMessageAsync(groupId, "AddMembers",
+                    $"{string.Join(", ", addedNames)} được {currentUser.HoVaTen} thêm vào nhóm.", _currentUserId);
+            }
 
             await _unitOfWork.CompleteAsync();
             return Ok();

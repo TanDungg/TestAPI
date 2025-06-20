@@ -51,6 +51,8 @@ namespace AiImageGeneratorApi.Models.DTOs
     public class ChatMessageDto
     {
         public Guid Id { get; set; }
+        public bool IsNhom { get; set; }
+        public Guid? NhomId { get; set; }
         public Guid NguoiGuiId { get; set; }
         public string? TenNguoiGui { get; set; }
         public string? HinhAnh { get; set; }
