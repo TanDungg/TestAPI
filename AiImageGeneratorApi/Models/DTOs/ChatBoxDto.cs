@@ -29,6 +29,7 @@ namespace AiImageGeneratorApi.Models.DTOs
         public string ThoiGianNhan { get; set; }
         public int SoLuongChuaXem { get; set; }
         public bool IsGui { get; set; }
+        public string TenNguoiGui { get; set; }
         public bool IsThongBao { get; set; }
     }
 

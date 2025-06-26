@@ -103,8 +103,15 @@ namespace AiImageGeneratorApi.Controllers
             }
             else if (dto.NhomId != null) // Chat nhóm
             {
-                var members = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.NhomId == dto.NhomId.Value);
+                var members = await _unitOfWork.ChatGroupMembers.FindAsync(m =>
+                    m.NhomId == dto.NhomId.Value && !m.IsDeleted);
+
+                // ✅ Nếu người gửi không còn trong nhóm → im lặng không gửi, không trả lỗi
+                if (!members.Any(m => m.ThanhVienId == _currentUserId))
+                    return Ok(); // Không thông báo gì cả
+
                 var users = await _unitOfWork.Users.FindAsync(u => members.Select(m => m.ThanhVienId).Contains(u.Id));
+
                 foreach (var user in users)
                 {
                     if (string.IsNullOrWhiteSpace(user.PublicKey)) continue;
@@ -167,6 +174,7 @@ namespace AiImageGeneratorApi.Controllers
                 .FindAsync(m => (m.NguoiGuiId == userId || m.NguoiNhanId == userId) && m.NhomId == null && !m.IsDeleted);
 
             var userMessages = new List<ListChatDto>();
+            var oneToOneLastSenders = new HashSet<Guid>();
 
             foreach (var group in messages.GroupBy(m => m.NguoiGuiId == userId ? m.NguoiNhanId : m.NguoiGuiId))
             {
@@ -178,9 +186,13 @@ namespace AiImageGeneratorApi.Controllers
                     if (lastMsg.IsThongBao)
                     {
                         decrypted = lastMsg.TinNhan ?? "[Thông báo]";
+                        var hoVaTen = currentUser.HoVaTen?.Trim();
+                        if (!string.IsNullOrEmpty(hoVaTen) && decrypted.Contains(hoVaTen))
+                        {
+                            decrypted = decrypted.Replace(hoVaTen, "Bạn");
+                        }
                     }
-                    else if (!string.IsNullOrEmpty(lastMsg.EncryptedMessage) &&
-                             !string.IsNullOrEmpty(lastMsg.IV))
+                    else if (!string.IsNullOrEmpty(lastMsg.EncryptedMessage) && !string.IsNullOrEmpty(lastMsg.IV))
                     {
                         var keyEntry = await _unitOfWork.ChatMessageKeys
                             .FindAsync(k => k.TinNhanId == lastMsg.Id && k.ThanhVienId == userId);
@@ -202,6 +214,8 @@ namespace AiImageGeneratorApi.Controllers
                     _logger.LogError(ex, "Lỗi giải mã tin nhắn ID: {MessageId}", lastMsg.Id);
                 }
 
+                oneToOneLastSenders.Add(lastMsg.NguoiGuiId);
+
                 userMessages.Add(new ListChatDto
                 {
                     IsNhom = false,
@@ -210,29 +224,37 @@ namespace AiImageGeneratorApi.Controllers
                     ThoiGianNhan = lastMsg.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
                     SoLuongChuaXem = group.Count(m => m.NguoiNhanId == userId && !m.IsRead),
                     IsGui = lastMsg.NguoiGuiId == userId,
-                    IsThongBao = lastMsg.IsThongBao
+                    IsThongBao = lastMsg.IsThongBao,
+                    TenNguoiGui = lastMsg.NguoiGuiId == userId ? "Bạn" : null // sẽ gán sau nếu khác user
                 });
             }
 
             // --- Tin nhắn nhóm ---
-            var joinedGroups = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.ThanhVienId == userId);
-            var groupIds = joinedGroups.Select(j => j.NhomId).ToList();
+            var groupMemberships = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.ThanhVienId == userId);
+            var activeGroupIds = groupMemberships.Select(m => m.NhomId).ToList();
+            var groupDeletedMap = groupMemberships.ToDictionary(m => m.NhomId, m => m.DeletedAt);
 
             var groupMessages = await _unitOfWork.ChatMessages
-                .FindAsync(m => m.NhomId != null && groupIds.Contains(m.NhomId.Value) && !m.IsDeleted);
+                .FindAsync(m => m.NhomId != null && activeGroupIds.Contains(m.NhomId.Value) && !m.IsDeleted);
 
             var allGroupMessageIds = groupMessages.Select(m => m.Id).ToList();
-
             var groupReads = await _unitOfWork.ChatMessageReads
                 .FindAsync(r => r.ThanhVienId == userId && allGroupMessageIds.Contains(r.TinNhanId));
 
             var readMessageIdSet = new HashSet<Guid>(groupReads.Select(r => r.TinNhanId));
-
             var groupData = new List<ListChatDto>();
+            var groupLastSenders = new HashSet<Guid>();
 
             foreach (var group in groupMessages.GroupBy(m => m.NhomId.Value))
             {
-                var lastMsg = group.OrderByDescending(m => m.CreatedAt).First();
+                var deletedAt = groupDeletedMap.GetValueOrDefault(group.Key);
+                var filteredGroup = group
+                    .Where(m => !deletedAt.HasValue || m.CreatedAt <= deletedAt.Value)
+                    .ToList();
+
+                if (!filteredGroup.Any()) continue;
+
+                var lastMsg = filteredGroup.OrderByDescending(m => m.CreatedAt).First();
                 string decrypted = "[Không thể giải mã]";
 
                 try
@@ -240,9 +262,13 @@ namespace AiImageGeneratorApi.Controllers
                     if (lastMsg.IsThongBao)
                     {
                         decrypted = lastMsg.TinNhan ?? "[Thông báo]";
+                        var hoVaTen = currentUser.HoVaTen?.Trim();
+                        if (!string.IsNullOrEmpty(hoVaTen) && decrypted.Contains(hoVaTen))
+                        {
+                            decrypted = decrypted.Replace(hoVaTen, "Bạn");
+                        }
                     }
-                    else if (!string.IsNullOrEmpty(lastMsg.EncryptedMessage) &&
-                             !string.IsNullOrEmpty(lastMsg.IV))
+                    else if (!string.IsNullOrEmpty(lastMsg.EncryptedMessage) && !string.IsNullOrEmpty(lastMsg.IV))
                     {
                         var keyEntry = await _unitOfWork.ChatMessageKeys
                             .FindAsync(k => k.TinNhanId == lastMsg.Id && k.ThanhVienId == userId);
@@ -264,19 +290,22 @@ namespace AiImageGeneratorApi.Controllers
                     _logger.LogError(ex, "Lỗi giải mã tin nhắn nhóm ID: {MessageId}", lastMsg.Id);
                 }
 
+                groupLastSenders.Add(lastMsg.NguoiGuiId);
+
                 groupData.Add(new ListChatDto
                 {
                     IsNhom = true,
                     Id = group.Key,
                     TinNhanMoiNhat = decrypted,
                     ThoiGianNhan = lastMsg.CreatedAt.ToString("dd/MM/yyyy HH:mm:ss"),
-                    SoLuongChuaXem = group.Count(m => m.NguoiGuiId != userId && !readMessageIdSet.Contains(m.Id)),
+                    SoLuongChuaXem = filteredGroup.Count(m => m.NguoiGuiId != userId && !readMessageIdSet.Contains(m.Id)),
                     IsGui = lastMsg.NguoiGuiId == userId,
-                    IsThongBao = lastMsg.IsThongBao
+                    IsThongBao = lastMsg.IsThongBao,
+                    TenNguoiGui = lastMsg.NguoiGuiId == userId ? "Bạn" : null // sẽ gán sau nếu khác user
                 });
             }
 
-            // --- Mapping tên + ảnh ---
+            // --- Mapping tên người nhận/gửi + ảnh ---
             var userIds = userMessages.Select(x => x.Id).Distinct().ToList();
             var groupIdsToFetch = groupData.Select(x => x.Id).Distinct().ToList();
 
@@ -288,6 +317,11 @@ namespace AiImageGeneratorApi.Controllers
 
             var groupMap = groups.ToDictionary(g => g.Id, g => g.TenNhom);
             var groupAvatarMap = groups.ToDictionary(g => g.Id, g => g.HinhAnh);
+
+            // --- Lấy thêm tên người gửi nếu không phải "Bạn"
+            var allSenderIds = oneToOneLastSenders.Union(groupLastSenders).ToList();
+            var senders = await _unitOfWork.Users.FindAsync(u => allSenderIds.Contains(u.Id));
+            var senderMap = senders.ToDictionary(u => u.Id, u => u.HoVaTen);
 
             var all = userMessages.Concat(groupData)
                 .Select(x =>
@@ -303,6 +337,11 @@ namespace AiImageGeneratorApi.Controllers
                         x.HinhAnh = userAvatarMap.GetValueOrDefault(x.Id);
                     }
 
+                    if (x.TenNguoiGui == null && senderMap.TryGetValue(x.IsGui ? userId : allSenderIds.FirstOrDefault(sid => sid != userId), out var tenNguoiGui))
+                    {
+                        x.TenNguoiGui = tenNguoiGui;
+                    }
+
                     return x;
                 })
                 .OrderByDescending(x => x.ThoiGianNhan)
@@ -315,11 +354,23 @@ namespace AiImageGeneratorApi.Controllers
         public async Task<IActionResult> GetChatMessages([FromQuery] bool isNhom, [FromQuery] Guid id)
         {
             var currentUser = await _currentUserInfo.Value;
+            bool isRemovedFromGroup = false;
 
             if (isNhom)
             {
-                var isMember = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.NhomId == id && m.ThanhVienId == _currentUserId);
-                if (!isMember.Any()) return Forbid();
+                var isMember = await _unitOfWork.ChatGroupMembers
+                    .FindAsync(m => m.NhomId == id && m.ThanhVienId == _currentUserId);
+
+                var member = isMember.FirstOrDefault();
+                if (member == null)
+                {
+                    return NotFound("Nhóm không tồn tại hoặc bạn chưa từng tham gia.");
+                }
+
+                if (member.IsDeleted)
+                {
+                    isRemovedFromGroup = true;
+                }
             }
 
             string sql = "EXEC sp_GetChatInfoMessages {0}, {1}, {2}";
@@ -337,11 +388,20 @@ namespace AiImageGeneratorApi.Controllers
                     {
                         if (msg.IsThongBao)
                         {
-                            msg.TinNhan = msg.TinNhan ?? "[Thông báo]";
+                            // Nếu là tin hệ thống, và có tên người dùng hiện tại trong tin → thay thành "Bạn"
+                            var hoVaTen = currentUser.HoVaTen?.Trim();
+
+                            msg.TinNhan ??= "[Thông báo]";
+                            if (!string.IsNullOrEmpty(hoVaTen) && msg.TinNhan.Contains(hoVaTen))
+                            {
+                                msg.TinNhan = msg.TinNhan.Replace(hoVaTen, "Bạn");
+                            }
+
                             continue;
                         }
 
-                        var keyRecordList = await _unitOfWork.ChatMessageKeys.FindAsync(k => k.TinNhanId == msg.Id && k.ThanhVienId == _currentUserId);
+                        var keyRecordList = await _unitOfWork.ChatMessageKeys.FindAsync(k =>
+                            k.TinNhanId == msg.Id && k.ThanhVienId == _currentUserId);
                         var keyRecord = keyRecordList.FirstOrDefault();
 
                         if (keyRecord != null && !string.IsNullOrWhiteSpace(keyRecord.EncryptedKey))
@@ -372,7 +432,8 @@ namespace AiImageGeneratorApi.Controllers
                 raw.HinhAnh,
                 raw.IsNhom,
                 raw.SoLuongThanhVien,
-                List_Ngays = parsedNgays
+                List_Ngays = parsedNgays,
+                IsRemovedFromGroup = isRemovedFromGroup // ✅ Biến bổ sung
             });
         }
 

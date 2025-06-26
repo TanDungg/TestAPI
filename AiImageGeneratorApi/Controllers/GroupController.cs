@@ -109,6 +109,7 @@ namespace AiImageGeneratorApi.Controllers
 
             return Ok();
         }
+
         [HttpPost("members/{groupId}")]
         public async Task<IActionResult> AddMembers(Guid groupId, [FromBody] List<Guid> userIds)
         {
@@ -206,21 +207,52 @@ namespace AiImageGeneratorApi.Controllers
         public async Task<IActionResult> RemoveMembers(Guid groupId, [FromBody] List<Guid> userIds)
         {
             var group = await _unitOfWork.ChatGroups.GetByIdAsync(groupId);
-            if (group == null || group.TruongNhomId != _currentUserId) return Forbid();
+            if (group == null) return NotFound();
 
-            var members = await _unitOfWork.ChatGroupMembers.FindAsync(m => m.NhomId == groupId && userIds.Contains(m.ThanhVienId));
+            var currentUser = await _currentUserInfo.Value;
+
+            // Nếu là trưởng nhóm, cho phép xóa thành viên khác
+            var isGroupLeader = group.TruongNhomId == _currentUserId;
+
+            // Nếu không phải trưởng nhóm mà cố xóa người khác => cấm
+            if (!isGroupLeader && userIds.Any(id => id != _currentUserId))
+            {
+                return BadRequest("Trưởng nhóm mới được xóa thành viên!");
+            }
+
+            // Nếu là trưởng nhóm nhưng có trong danh sách xóa chính mình => từ chối
+            if (isGroupLeader && userIds.Contains(_currentUserId))
+            {
+                return BadRequest("Trưởng nhóm không thể tự rời nhóm. Hãy chuyển quyền trước!");
+            }
+
+            var members = await _unitOfWork.ChatGroupMembers.FindAsync(m =>
+                m.NhomId == groupId && userIds.Contains(m.ThanhVienId));
+
             foreach (var m in members)
             {
                 _unitOfWork.ChatGroupMembers.Remove(m);
             }
 
-            var currentUser = await _currentUserInfo.Value;
             var allUsers = await _unitOfWork.Users.FindAsync(u => !u.IsDeleted);
-            var removedNames = allUsers.Where(u => userIds.Contains(u.Id)).Select(u => u.HoVaTen).ToList();
+            var removedNames = allUsers
+                .Where(u => userIds.Contains(u.Id))
+                .Select(u => u.HoVaTen)
+                .ToList();
 
-            await _chatGroupHelper.CreateSystemMessageAsync(groupId, "RemovedMembers", $"{string.Join(", ", removedNames)} được {currentUser.HoVaTen} xóa khỏi nhóm.", _currentUserId);
+            string message;
+            if (userIds.Count == 1 && userIds[0] == _currentUserId && !isGroupLeader)
+            {
+                message = $"{currentUser.HoVaTen} đã rời khỏi nhóm.";
+            }
+            else
+            {
+                message = $"{string.Join(", ", removedNames)} được {currentUser.HoVaTen} xóa khỏi nhóm.";
+            }
 
+            await _chatGroupHelper.CreateSystemMessageAsync(groupId, "RemovedMembers", message, _currentUserId);
             await _unitOfWork.CompleteAsync();
+
             return Ok();
         }
 
